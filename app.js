@@ -226,9 +226,7 @@ function createMouseCircleGame() {
     { name: "square", fn: (angle) => polygonRadius(angle, 4) },
     { name: "pentagon", fn: (angle) => polygonRadius(angle, 5) },
     { name: "hexagon", fn: (angle) => polygonRadius(angle, 6) },
-    { name: "heptagon", fn: (angle) => polygonRadius(angle, 7) },
     { name: "octagon", fn: (angle) => polygonRadius(angle, 8) },
-    { name: "star", fn: (angle) => starRadius(angle, 5) },
   ];
 
   const state = {
@@ -244,7 +242,7 @@ function createMouseCircleGame() {
     morphDifficulty: 0,
     driftDifficulty: 0,
     morphTime: 0,
-    morphDuration: randomRange(2.1, 2.9),
+    morphDuration: randomRange(1.3, 1.9),
     morphFrom: 0,
     morphTo: 1,
     sizePhase: 0,
@@ -284,7 +282,7 @@ function createMouseCircleGame() {
     state.driftDifficulty = 0;
     state.sizePhase = 0;
     state.morphTime = 0;
-    state.morphDuration = randomRange(2.1, 2.9);
+    state.morphDuration = randomRange(1.3, 1.9);
     state.cursorReady = false;
     state.started = false;
     state.driftTimer = 0;
@@ -326,7 +324,7 @@ function createMouseCircleGame() {
     state.driftTarget.x = state.velocity.x;
     state.driftTarget.y = state.velocity.y;
     state.morphFrom = Math.floor(Math.random() * shapes.length);
-    state.morphTo = nextShapeIndex(state.morphFrom);
+    state.morphTo = nextShapeIndex(state.morphFrom, shapes.length);
   }
 
   function loop(now) {
@@ -379,8 +377,8 @@ function createMouseCircleGame() {
   }
 
   function updateMotion(dt) {
-    const baseSpeed = state.minDim * 0.08;
-    let speedScale = 1 + state.speedDifficulty * 0.16;
+    const baseSpeed = state.minDim * 0.11;
+    let speedScale = 1 + state.speedDifficulty * 0.24;
     const minSize = currentMinSize();
     const sizeSafety = clamp(minSize / (state.minDim * 0.1), 0.6, 1);
     speedScale *= sizeSafety;
@@ -423,19 +421,19 @@ function createMouseCircleGame() {
   }
 
   function updateMorph(dt) {
-    const durationScale = 1 - clamp(state.morphDifficulty * 0.02, 0, 0.35);
+    const durationScale = 1 - clamp(state.morphDifficulty * 0.035, 0, 0.45);
     const morphDuration = state.morphDuration * durationScale;
     state.morphTime += dt;
     if (state.morphTime >= morphDuration) {
       state.morphTime = 0;
       state.morphFrom = state.morphTo;
-      state.morphTo = nextShapeIndex(state.morphFrom);
-      state.morphDuration = randomRange(2.1, 2.9);
+      state.morphTo = nextShapeIndex(state.morphFrom, shapes.length);
+      state.morphDuration = randomRange(1.3, 1.9);
     }
   }
 
   function updateSizePulse(dt) {
-    const pulseDuration = pulseDurationBase * (1 - clamp(state.morphDifficulty * 0.01, 0, 0.2));
+    const pulseDuration = pulseDurationBase * (1 - clamp(state.morphDifficulty * 0.02, 0, 0.3));
     state.sizePhase = (state.sizePhase + dt / pulseDuration) % 1;
     const minSize = currentMinSize();
     const maxSize = currentMaxSize();
@@ -580,15 +578,10 @@ function polygonRadius(angle, sides) {
   return Math.cos(slice / 2) / Math.cos(offset);
 }
 
-function starRadius(angle, points) {
-  const spikes = Math.abs(Math.cos(angle * points));
-  return 0.55 + spikes * 0.45;
-}
-
-function nextShapeIndex(current) {
+function nextShapeIndex(current, total) {
   let next = current;
   while (next === current) {
-    next = Math.floor(Math.random() * 8);
+    next = Math.floor(Math.random() * total);
   }
   return next;
 }
@@ -598,12 +591,12 @@ function difficultyStepMagnitude(elapsedSeconds) {
     return 0.0;
   }
   if (elapsedSeconds < 18) {
-    return 2.2;
+    return 3.4;
   }
   if (elapsedSeconds < 35) {
-    return 1.3;
+    return 2.0;
   }
-  return 0.7;
+  return 1.3;
 }
 
 function clamp(value, min, max) {
