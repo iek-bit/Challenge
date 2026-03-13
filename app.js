@@ -280,7 +280,7 @@ function createMouseCircleGame() {
     state.sizeDifficulty = 0;
     state.morphDifficulty = 0;
     state.driftDifficulty = 0;
-    state.sizePhase = 0;
+    state.sizePhase = 0.25;
     state.morphTime = 0;
     state.morphDuration = randomRange(1.3, 1.9);
     state.cursorReady = false;
@@ -337,6 +337,10 @@ function createMouseCircleGame() {
         elapsed = 0;
         stepTimer = 0;
         totalDifficulty = 0;
+        const minSize = currentMinSize();
+        const maxSize = currentMaxSize();
+        state.sizePhase = 0.25;
+        state.currentRadius = (minSize + maxSize) * 0.5;
       }
     }
 
