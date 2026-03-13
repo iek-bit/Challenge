@@ -30,6 +30,19 @@
 
           <div class="game-list" id="gameList"></div>
         </section>
+
+        <section class="game-screen is-hidden" data-view="game">
+          <div class="game-hud">
+            <div class="hud-bar">
+              <div class="progress-track">
+                <div class="progress-fill" id="difficultyProgress"></div>
+              </div>
+              <div class="score-readout" id="scoreReadout">0000.00</div>
+              <button class="exit-button" id="exitButton" type="button">Exit</button>
+            </div>
+          </div>
+          <canvas id="gameCanvas"></canvas>
+        </section>
       </main>
     </div>
 
