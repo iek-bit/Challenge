@@ -39,6 +39,8 @@ const gameList = document.getElementById("gameList");
 const homeScreen = document.querySelector('[data-view="home"]');
 const selectScreen = document.querySelector('[data-view="select"]');
 
+document.body.classList.add("home-active");
+
 const iconFactory = {
   circle: () => `
     <svg class="game-icon" viewBox="0 0 120 120" fill="none" stroke-width="2">
@@ -139,6 +141,7 @@ function setupNavigation() {
   startButton.addEventListener("click", () => {
     homeScreen.classList.add("is-hidden");
     selectScreen.classList.remove("is-hidden");
+    document.body.classList.remove("home-active");
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
 }

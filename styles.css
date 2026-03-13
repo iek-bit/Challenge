@@ -33,6 +33,10 @@ body {
   letter-spacing: 0.02em;
 }
 
+body.home-active {
+  overflow: hidden;
+}
+
 body::before {
   content: "";
   position: fixed;
