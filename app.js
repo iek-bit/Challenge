@@ -329,18 +329,19 @@ function createMouseCircleGame() {
     if (!running) return;
     const dt = Math.min((now - lastTime) / 1000, 0.033);
     lastTime = now;
-    updateMotion(dt);
-    updateMorph(dt);
-    updateSizePulse(dt);
-
     if (!state.started) {
-      if (isCursorInsideShape()) {
+      if (isCursorInsideShape(0.55)) {
         state.started = true;
         elapsed = 0;
         stepTimer = 0;
         totalDifficulty = 0;
       }
-    } else {
+    }
+
+    if (state.started) {
+      updateMotion(dt);
+      updateMorph(dt);
+      updateSizePulse(dt);
       elapsed += dt;
       stepTimer += dt;
 
@@ -348,14 +349,13 @@ function createMouseCircleGame() {
         stepTimer -= stepDuration;
         applyDifficultyStep();
       }
+
+      checkCollision();
     }
 
     updateBackground();
     updateScore();
     render();
-    if (state.started) {
-      checkCollision();
-    }
 
     if (running) {
       animationId = requestAnimationFrame(loop);
@@ -513,7 +513,7 @@ function createMouseCircleGame() {
     }
   }
 
-  function isCursorInsideShape() {
+  function isCursorInsideShape(innerRatio = 1) {
     if (!state.cursorReady) return false;
     const dx = state.cursor.x - state.center.x;
     const dy = state.cursor.y - state.center.y;
@@ -521,7 +521,7 @@ function createMouseCircleGame() {
     const angle = Math.atan2(dy, dx);
     const morphProgress = state.morphTime / currentMorphDuration();
     const eased = 0.5 - 0.5 * Math.cos(Math.PI * clamp(morphProgress, 0, 1));
-    const boundary = shapeRadiusAtAngle(angle, eased) + buffer;
+    const boundary = shapeRadiusAtAngle(angle, eased) * innerRatio;
     return distance <= boundary;
   }
 
