@@ -106,7 +106,8 @@ function buildGameSections() {
     grid.className = "game-grid";
 
     Object.entries(gameRegistry).forEach(([gameId, game]) => {
-      if (!game.tags.includes(tag)) return;
+      const primaryTag = game.tags[0];
+      if (primaryTag !== tag) return;
 
       const card = document.createElement("button");
       card.className = "game-card";
