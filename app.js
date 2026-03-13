@@ -250,6 +250,9 @@ function createMouseCircleGame() {
     sizePhase: 0,
     currentRadius: 0,
     bgColor: "#0b0e13",
+    started: false,
+    driftTimer: 0,
+    driftTarget: { x: 0, y: 0 },
   };
 
   const ctx = gameCanvas.getContext("2d");
@@ -283,6 +286,8 @@ function createMouseCircleGame() {
     state.morphTime = 0;
     state.morphDuration = randomRange(2.1, 2.9);
     state.cursorReady = false;
+    state.started = false;
+    state.driftTimer = 0;
     resize();
     window.addEventListener("resize", resize);
     window.addEventListener("pointermove", handlePointer);
@@ -314,6 +319,8 @@ function createMouseCircleGame() {
     const angle = Math.random() * Math.PI * 2;
     state.velocity.x = Math.cos(angle);
     state.velocity.y = Math.sin(angle);
+    state.driftTarget.x = state.velocity.x;
+    state.driftTarget.y = state.velocity.y;
     state.morphFrom = Math.floor(Math.random() * shapes.length);
     state.morphTo = nextShapeIndex(state.morphFrom);
   }
@@ -322,21 +329,33 @@ function createMouseCircleGame() {
     if (!running) return;
     const dt = Math.min((now - lastTime) / 1000, 0.033);
     lastTime = now;
-    elapsed += dt;
-    stepTimer += dt;
-
-    if (stepTimer >= stepDuration) {
-      stepTimer -= stepDuration;
-      applyDifficultyStep();
-    }
-
     updateMotion(dt);
     updateMorph(dt);
     updateSizePulse(dt);
+
+    if (!state.started) {
+      if (isCursorInsideShape()) {
+        state.started = true;
+        elapsed = 0;
+        stepTimer = 0;
+        totalDifficulty = 0;
+      }
+    } else {
+      elapsed += dt;
+      stepTimer += dt;
+
+      if (stepTimer >= stepDuration) {
+        stepTimer -= stepDuration;
+        applyDifficultyStep();
+      }
+    }
+
     updateBackground();
     updateScore();
     render();
-    checkCollision();
+    if (state.started) {
+      checkCollision();
+    }
 
     if (running) {
       animationId = requestAnimationFrame(loop);
@@ -357,15 +376,25 @@ function createMouseCircleGame() {
 
   function updateMotion(dt) {
     const baseSpeed = state.minDim * 0.08;
-    let speedScale = 1 + state.speedDifficulty * 0.12;
+    let speedScale = 1 + state.speedDifficulty * 0.16;
     const minSize = currentMinSize();
     const sizeSafety = clamp(minSize / (state.minDim * 0.1), 0.6, 1);
     speedScale *= sizeSafety;
     const speed = baseSpeed * speedScale;
 
-    const driftStrength = 0.6 + state.driftDifficulty * 0.12;
-    const driftAngle = (Math.random() - 0.5) * driftStrength * dt;
-    rotateVelocity(driftAngle);
+    state.driftTimer += dt;
+    const driftInterval = Math.max(0.18, 0.6 - state.driftDifficulty * 0.03);
+    if (state.driftTimer >= driftInterval) {
+      state.driftTimer = 0;
+      const targetAngle = Math.random() * Math.PI * 2;
+      state.driftTarget.x = Math.cos(targetAngle);
+      state.driftTarget.y = Math.sin(targetAngle);
+    }
+
+    const driftBlend = 0.02 + state.driftDifficulty * 0.003;
+    state.velocity.x = lerp(state.velocity.x, state.driftTarget.x, driftBlend);
+    state.velocity.y = lerp(state.velocity.y, state.driftTarget.y, driftBlend);
+    normalizeVelocity();
 
     state.center.x += state.velocity.x * speed * dt;
     state.center.y += state.velocity.y * speed * dt;
@@ -484,6 +513,18 @@ function createMouseCircleGame() {
     }
   }
 
+  function isCursorInsideShape() {
+    if (!state.cursorReady) return false;
+    const dx = state.cursor.x - state.center.x;
+    const dy = state.cursor.y - state.center.y;
+    const distance = Math.hypot(dx, dy);
+    const angle = Math.atan2(dy, dx);
+    const morphProgress = state.morphTime / currentMorphDuration();
+    const eased = 0.5 - 0.5 * Math.cos(Math.PI * clamp(morphProgress, 0, 1));
+    const boundary = shapeRadiusAtAngle(angle, eased) + buffer;
+    return distance <= boundary;
+  }
+
   function shapeRadiusAtAngle(angle, eased) {
     const fromShape = shapes[state.morphFrom];
     const toShape = shapes[state.morphTo];
@@ -519,6 +560,12 @@ function createMouseCircleGame() {
     state.velocity.y = vy / len;
   }
 
+  function normalizeVelocity() {
+    const len = Math.hypot(state.velocity.x, state.velocity.y) || 1;
+    state.velocity.x /= len;
+    state.velocity.y /= len;
+  }
+
   return { start, stop };
 }
 
@@ -543,9 +590,9 @@ function nextShapeIndex(current) {
 }
 
 function difficultyStepMagnitude(elapsedSeconds) {
-  const earlyBoost = Math.exp(-elapsedSeconds / 10);
-  const base = 0.55;
-  return base + 1.0 * earlyBoost;
+  const earlyBoost = Math.exp(-elapsedSeconds / 6);
+  const base = 0.5;
+  return base + 1.6 * earlyBoost;
 }
 
 function clamp(value, min, max) {
@@ -554,6 +601,10 @@ function clamp(value, min, max) {
 
 function randomRange(min, max) {
   return min + Math.random() * (max - min);
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
 }
 
 function mixColor(a, b, t) {
