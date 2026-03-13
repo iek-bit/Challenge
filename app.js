@@ -594,9 +594,16 @@ function nextShapeIndex(current) {
 }
 
 function difficultyStepMagnitude(elapsedSeconds) {
-  const earlyBoost = Math.exp(-elapsedSeconds / 6);
-  const base = 0.5;
-  return base + 1.6 * earlyBoost;
+  if (elapsedSeconds < 5) {
+    return 0.0;
+  }
+  if (elapsedSeconds < 18) {
+    return 2.2;
+  }
+  if (elapsedSeconds < 35) {
+    return 1.3;
+  }
+  return 0.7;
 }
 
 function clamp(value, min, max) {
