@@ -288,10 +288,14 @@ function createMouseCircleGame() {
     state.cursorReady = false;
     state.started = false;
     state.driftTimer = 0;
+    state.morphTime = 0;
     resize();
     window.addEventListener("resize", resize);
     window.addEventListener("pointermove", handlePointer);
     initMotion();
+    const minSize = currentMinSize();
+    const maxSize = currentMaxSize();
+    state.currentRadius = (minSize + maxSize) * 0.5;
     running = true;
     lastTime = performance.now();
     loop(lastTime);
