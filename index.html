@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Retro Mini-Arcade</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="site-header">
+        <div class="brand">Retro Mini-Arcade</div>
+        <div class="status-pill">Local Scores</div>
+      </header>
+
+      <main class="view-stack">
+        <section class="home-screen" data-view="home">
+          <div class="home-card">
+            <h1>Press Start</h1>
+            <p>Fast, focused challenges. Pure skill. No noise.</p>
+            <button class="start-button" id="startButton">Start</button>
+          </div>
+        </section>
+
+        <section class="select-screen is-hidden" data-view="select">
+          <aside class="tag-sidebar">
+            <div class="sidebar-title">Jump</div>
+            <nav class="tag-links" id="tagLinks"></nav>
+          </aside>
+
+          <div class="game-list" id="gameList"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
