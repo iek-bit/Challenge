@@ -291,6 +291,9 @@ const GameController = (() => {
   function startRacingMode(mode) {
     if (!currentGame || !currentGame.startMode) return;
     raceModeSelect.classList.add("is-hidden");
+    if (currentGame.start) {
+      currentGame.start();
+    }
     currentGame.startMode(mode);
   }
 
@@ -353,12 +356,24 @@ const HoverPreviewController = (() => {
     if (!game || !game.createPreview) return;
     const canvas = card.querySelector(".game-preview");
     if (!canvas) return;
-    resizeCanvasToCard(canvas, card);
-    const instance = game.createPreview(canvas);
-    if (instance.renderStatic) {
-      instance.renderStatic();
-    }
-    previews.set(card, instance);
+    let attempts = 0;
+    const tryInit = () => {
+      const rect = card.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) {
+        if (attempts < 6) {
+          attempts += 1;
+          requestAnimationFrame(tryInit);
+        }
+        return;
+      }
+      resizeCanvasToCard(canvas, card);
+      const instance = game.createPreview(canvas);
+      if (instance.renderStatic) {
+        instance.renderStatic();
+      }
+      previews.set(card, instance);
+    };
+    requestAnimationFrame(tryInit);
   }
 
   function start(card) {
