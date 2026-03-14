@@ -252,6 +252,12 @@ body::after {
   color: var(--text-muted);
 }
 
+.hearts-readout {
+  font-size: 16px;
+  letter-spacing: 0.2em;
+  color: var(--accent);
+}
+
 .exit-button {
   pointer-events: auto;
   border: 1px solid rgba(226, 230, 234, 0.2);
@@ -343,6 +349,25 @@ body::after {
   transition: transform 0.2s ease, border 0.2s ease;
 }
 
+.info-button {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(226, 230, 234, 0.2);
+  background: rgba(6, 7, 8, 0.8);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.info-button:hover {
+  border-color: rgba(138, 182, 166, 0.5);
+}
+
 .game-card:hover {
   transform: translateY(-4px);
   border-color: rgba(138, 182, 166, 0.4);
@@ -394,6 +419,70 @@ body::after {
 
 .is-collapsed {
   display: none;
+}
+
+.info-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+}
+
+.info-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 7, 8, 0.7);
+}
+
+.info-card {
+  position: relative;
+  z-index: 2;
+  background: rgba(10, 12, 16, 0.95);
+  border: 1px solid rgba(226, 230, 234, 0.12);
+  border-radius: var(--radius);
+  padding: 24px;
+  width: min(620px, 90vw);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  display: grid;
+  gap: 16px;
+}
+
+.info-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border: 1px solid rgba(226, 230, 234, 0.15);
+  background: transparent;
+  color: var(--text);
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.info-title {
+  font-family: "Oxanium", "Chakra Petch", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+
+.info-body {
+  display: grid;
+  gap: 12px;
+}
+
+#infoCanvas {
+  width: 100%;
+  height: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(226, 230, 234, 0.12);
+  background: #060708;
+}
+
+.info-text {
+  color: var(--text-muted);
+  line-height: 1.5;
 }
 
 .home-screen,

@@ -35,6 +35,7 @@
             <div class="hud-bar">
               <div class="score-readout" id="scoreReadout">0000.00</div>
               <div class="missed-readout" id="missedReadout">Missed 0/3</div>
+              <div class="hearts-readout is-hidden" id="heartsReadout">❤❤❤</div>
               <button class="exit-button" id="exitButton" type="button">Exit</button>
             </div>
           </div>
@@ -48,6 +49,18 @@
           </div>
         </section>
       </main>
+    </div>
+
+    <div class="info-modal is-hidden" id="infoModal">
+      <div class="info-scrim" id="infoScrim"></div>
+      <div class="info-card">
+        <button class="info-close" id="infoClose" type="button">×</button>
+        <div class="info-title" id="infoTitle">Game Preview</div>
+        <div class="info-body">
+          <canvas id="infoCanvas" width="480" height="270"></canvas>
+          <div class="info-text" id="infoText"></div>
+        </div>
+      </div>
     </div>
 
     <script src="app.js"></script>

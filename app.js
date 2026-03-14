@@ -7,6 +7,8 @@ const gameRegistry = {
     tags: ["Control", "Skill"],
     icon: "circle",
     createGame: () => createMouseCircleGame(),
+    createPreview: () => createMouseCirclePreview(),
+    infoText: "Keep the cursor inside a morphing shape as it darts around.",
   },
   "precision-clicks": {
     title: "Precision Clicks",
@@ -14,6 +16,8 @@ const gameRegistry = {
     tags: ["Skill", "Speed"],
     icon: "target",
     createGame: () => createPrecisionClicksGame(),
+    createPreview: () => createPrecisionClicksPreview(),
+    infoText: "Click true targets quickly. Decoys look similar but cost points.",
   },
   "timing-bar": {
     title: "Timing Bar",
@@ -21,18 +25,24 @@ const gameRegistry = {
     tags: ["Speed", "Skill"],
     icon: "timing",
     createGame: () => createTimingBarGame(),
+    createPreview: () => createTimingBarPreview(),
+    infoText: "Stop the slider inside the target window. Any key counts.",
   },
   "follow-path": {
     title: "Follow the Path",
     description: "Stay within a moving corridor.",
     tags: ["Control"],
     icon: "path",
+    infoText: "Guide the cursor through a moving corridor without leaving it.",
   },
   "dodge-field": {
     title: "Dodge Field",
     description: "Avoid incoming hazards as the arena tightens.",
     tags: ["Control", "Speed"],
     icon: "dodge",
+    createGame: () => createDodgeFieldGame(),
+    createPreview: () => createDodgeFieldPreview(),
+    infoText: "Dodge waves of hazards as they speed up and begin to curve.",
   },
 };
 
@@ -49,6 +59,13 @@ const gameOver = document.getElementById("gameOver");
 const gameOverScore = document.getElementById("gameOverScore");
 const continueButton = document.getElementById("continueButton");
 const exitButton = document.getElementById("exitButton");
+const infoModal = document.getElementById("infoModal");
+const infoScrim = document.getElementById("infoScrim");
+const infoClose = document.getElementById("infoClose");
+const infoTitle = document.getElementById("infoTitle");
+const infoText = document.getElementById("infoText");
+const infoCanvas = document.getElementById("infoCanvas");
+const heartsReadout = document.getElementById("heartsReadout");
 
 document.body.classList.add("home-active");
 
@@ -125,6 +142,12 @@ function buildGameSections() {
       card.type = "button";
       card.dataset.gameId = gameId;
 
+      const infoButton = document.createElement("button");
+      infoButton.className = "info-button";
+      infoButton.type = "button";
+      infoButton.dataset.gameId = gameId;
+      infoButton.textContent = "?";
+
       const chip = document.createElement("div");
       chip.className = "tag-chip";
       chip.textContent = game.tags.join(" / ");
@@ -136,6 +159,7 @@ function buildGameSections() {
       desc.textContent = game.description;
 
       card.innerHTML = iconFactory[game.icon]?.() ?? "";
+      card.appendChild(infoButton);
       card.appendChild(chip);
       card.appendChild(title);
       card.appendChild(desc);
@@ -163,6 +187,14 @@ function setupNavigation() {
 
   continueButton.addEventListener("click", () => {
     GameController.stop();
+  });
+
+  infoScrim.addEventListener("click", () => {
+    GamePreviewController.close();
+  });
+
+  infoClose.addEventListener("click", () => {
+    GamePreviewController.close();
   });
 }
 
@@ -193,6 +225,7 @@ const GameController = (() => {
 
     showView(gameScreen);
     gameOver.classList.add("is-hidden");
+    heartsReadout.classList.add("is-hidden");
     document.body.classList.add("game-active");
     currentGame = gameConfig.createGame();
     currentGame.start();
@@ -216,6 +249,7 @@ const GameController = (() => {
     gameOverScore.textContent = `Score ${scoreText}`;
     gameOver.classList.remove("is-hidden");
     document.body.classList.remove("game-active");
+    heartsReadout.classList.add("is-hidden");
   }
 
   return { start, stop, gameOverScreen };
@@ -223,12 +257,58 @@ const GameController = (() => {
 
 function setupGameCards() {
   gameList.addEventListener("click", (event) => {
+    const infoButton = event.target.closest(".info-button");
+    if (infoButton) {
+      const gameId = infoButton.dataset.gameId;
+      GamePreviewController.open(gameId);
+      event.stopPropagation();
+      return;
+    }
     const button = event.target.closest(".game-card");
     if (!button) return;
     const gameId = button.dataset.gameId;
     GameController.start(gameId);
   });
 }
+
+const GamePreviewController = (() => {
+  let preview = null;
+
+  function open(gameId) {
+    const game = gameRegistry[gameId];
+    if (!game) return;
+    infoTitle.textContent = game.title;
+    infoText.textContent = game.infoText ?? "";
+    infoModal.classList.remove("is-hidden");
+    startPreview(game);
+  }
+
+  function close() {
+    if (preview) {
+      preview.stop();
+      preview = null;
+    }
+    infoModal.classList.add("is-hidden");
+  }
+
+  function startPreview(game) {
+    if (preview) {
+      preview.stop();
+      preview = null;
+    }
+    if (game.createPreview) {
+      preview = game.createPreview();
+      preview.start();
+      return;
+    }
+    const ctx = infoCanvas.getContext("2d");
+    ctx.clearRect(0, 0, infoCanvas.width, infoCanvas.height);
+    ctx.fillStyle = "#060708";
+    ctx.fillRect(0, 0, infoCanvas.width, infoCanvas.height);
+  }
+
+  return { open, close };
+})();
 
 function createMouseCircleGame() {
   let running = false;
@@ -1162,6 +1242,536 @@ function createTimingBarGame() {
     const perfectWidth = zoneWidth * 0.3;
     ctx.fillStyle = "rgba(138, 182, 166, 0.35)";
     ctx.fillRect(zoneX + (zoneWidth - perfectWidth) / 2, barY - 6, perfectWidth, barHeight + 12);
+  }
+
+  return { start, stop };
+}
+
+function createMouseCirclePreview() {
+  let running = false;
+  let animationId = null;
+  let lastTime = 0;
+  const ctx = infoCanvas.getContext("2d");
+  const preview = {
+    width: 0,
+    height: 0,
+    center: { x: 0, y: 0 },
+    radius: 30,
+    angle: 0,
+  };
+
+  function start() {
+    preview.width = infoCanvas.width;
+    preview.height = infoCanvas.height;
+    preview.center.x = preview.width / 2;
+    preview.center.y = preview.height / 2;
+    running = true;
+    lastTime = performance.now();
+    loop(lastTime);
+  }
+
+  function stop() {
+    running = false;
+    if (animationId) cancelAnimationFrame(animationId);
+  }
+
+  function loop(now) {
+    if (!running) return;
+    const dt = Math.min((now - lastTime) / 1000, 0.033);
+    lastTime = now;
+    preview.angle += dt * 2;
+    preview.radius = 26 + Math.sin(now / 300) * 8;
+    preview.center.x = preview.width / 2 + Math.cos(now / 500) * preview.width * 0.18;
+    preview.center.y = preview.height / 2 + Math.sin(now / 420) * preview.height * 0.18;
+    render();
+    animationId = requestAnimationFrame(loop);
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, preview.width, preview.height);
+    ctx.fillStyle = "#060708";
+    ctx.fillRect(0, 0, preview.width, preview.height);
+    ctx.strokeStyle = "rgba(231, 237, 244, 0.8)";
+    ctx.beginPath();
+    ctx.arc(preview.center.x, preview.center.y, preview.radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  return { start, stop };
+}
+
+function createPrecisionClicksPreview() {
+  let running = false;
+  let animationId = null;
+  let lastTime = 0;
+  const ctx = infoCanvas.getContext("2d");
+  const targets = [];
+
+  function start() {
+    targets.length = 0;
+    for (let i = 0; i < 6; i += 1) {
+      targets.push({
+        x: randomRange(40, infoCanvas.width - 40),
+        y: randomRange(40, infoCanvas.height - 40),
+        r: 10 + Math.random() * 8,
+        decoy: i % 3 === 0,
+      });
+    }
+    running = true;
+    lastTime = performance.now();
+    loop(lastTime);
+  }
+
+  function stop() {
+    running = false;
+    if (animationId) cancelAnimationFrame(animationId);
+  }
+
+  function loop(now) {
+    if (!running) return;
+    const dt = Math.min((now - lastTime) / 1000, 0.033);
+    lastTime = now;
+    targets.forEach((t, idx) => {
+      t.r += Math.sin(now / 200 + idx) * 0.05;
+    });
+    render();
+    animationId = requestAnimationFrame(loop);
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, infoCanvas.width, infoCanvas.height);
+    ctx.fillStyle = "#060708";
+    ctx.fillRect(0, 0, infoCanvas.width, infoCanvas.height);
+    targets.forEach((t) => {
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.r, 0, Math.PI * 2);
+      if (t.decoy) {
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = "rgba(182, 149, 91, 0.75)";
+      } else {
+        ctx.setLineDash([]);
+        ctx.strokeStyle = "rgba(231, 237, 244, 0.85)";
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    });
+  }
+
+  return { start, stop };
+}
+
+function createTimingBarPreview() {
+  let running = false;
+  let animationId = null;
+  let lastTime = 0;
+  let sliderPos = 0.2;
+  let sliderDir = 1;
+  let zoneCenter = 0.6;
+  const ctx = infoCanvas.getContext("2d");
+
+  function start() {
+    running = true;
+    lastTime = performance.now();
+    loop(lastTime);
+  }
+
+  function stop() {
+    running = false;
+    if (animationId) cancelAnimationFrame(animationId);
+  }
+
+  function loop(now) {
+    if (!running) return;
+    const dt = Math.min((now - lastTime) / 1000, 0.033);
+    lastTime = now;
+    sliderPos += sliderDir * dt * 0.8;
+    if (sliderPos <= 0) {
+      sliderPos = 0;
+      sliderDir = 1;
+    } else if (sliderPos >= 1) {
+      sliderPos = 1;
+      sliderDir = -1;
+    }
+    zoneCenter += Math.sin(now / 600) * 0.0008;
+    render();
+    animationId = requestAnimationFrame(loop);
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, infoCanvas.width, infoCanvas.height);
+    ctx.fillStyle = "#060708";
+    ctx.fillRect(0, 0, infoCanvas.width, infoCanvas.height);
+    const barWidth = infoCanvas.width * 0.8;
+    const barX = infoCanvas.width * 0.1;
+    const barY = infoCanvas.height * 0.55;
+    const zoneWidth = barWidth * 0.16;
+    const zoneX = barX + zoneCenter * barWidth - zoneWidth / 2;
+    const sliderX = barX + sliderPos * barWidth;
+    ctx.strokeStyle = "rgba(231, 237, 244, 0.35)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.rect(barX, barY, barWidth, 10);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(138, 182, 166, 0.25)";
+    ctx.fillRect(zoneX, barY - 6, zoneWidth, 22);
+    ctx.fillStyle = "rgba(231, 237, 244, 0.9)";
+    ctx.fillRect(sliderX - 2, barY - 10, 4, 30);
+  }
+
+  return { start, stop };
+}
+
+function createDodgeFieldGame() {
+  let running = false;
+  let animationId = null;
+  let lastTime = 0;
+  let elapsed = 0;
+  let score = 0;
+  let lives = 3;
+  let totalDifficulty = 0;
+
+  const hazards = [];
+  const ctx = gameCanvas.getContext("2d");
+  const maxLives = 3;
+
+  const state = {
+    width: 0,
+    height: 0,
+    minDim: 0,
+    cursor: { x: 0, y: 0 },
+    cursorReady: false,
+    bgColor: "#060708",
+    spawnTimer: 0,
+  };
+
+  function resize() {
+    const rect = gameScreen.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    gameCanvas.width = rect.width * dpr;
+    gameCanvas.height = rect.height * dpr;
+    gameCanvas.style.width = `${rect.width}px`;
+    gameCanvas.style.height = `${rect.height}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    state.width = rect.width;
+    state.height = rect.height;
+    state.minDim = Math.min(rect.width, rect.height);
+    if (!state.cursorReady) {
+      state.cursor.x = rect.width / 2;
+      state.cursor.y = rect.height / 2;
+    }
+  }
+
+  function start() {
+    heartsReadout.classList.remove("is-hidden");
+    missedReadout.classList.add("is-collapsed");
+    lives = maxLives;
+    score = 0;
+    elapsed = 0;
+    totalDifficulty = 0;
+    hazards.length = 0;
+    state.spawnTimer = 0;
+    state.cursorReady = false;
+    resize();
+    window.addEventListener("resize", resize);
+    window.addEventListener("pointermove", handlePointer);
+    running = true;
+    lastTime = performance.now();
+    loop(lastTime);
+  }
+
+  function stop() {
+    running = false;
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+    }
+    window.removeEventListener("resize", resize);
+    window.removeEventListener("pointermove", handlePointer);
+  }
+
+  function handlePointer(event) {
+    const rect = gameCanvas.getBoundingClientRect();
+    state.cursor.x = event.clientX - rect.left;
+    state.cursor.y = event.clientY - rect.top;
+    state.cursorReady = true;
+  }
+
+  function loop(now) {
+    if (!running) return;
+    const dt = Math.min((now - lastTime) / 1000, 0.033);
+    lastTime = now;
+    elapsed += dt;
+    score = elapsed * 100;
+
+    updateDifficulty(dt);
+    updateSpawning(dt);
+    updateHazards(dt);
+    checkCollisions();
+    updateHud();
+    render();
+
+    if (running) {
+      animationId = requestAnimationFrame(loop);
+    }
+  }
+
+  function updateDifficulty(dt) {
+    const rate = 0.28 + elapsed * 0.02;
+    totalDifficulty += dt * rate;
+  }
+
+  function updateSpawning(dt) {
+    const maxConcurrent = currentMaxConcurrent();
+    state.spawnTimer += dt;
+    const interval = currentSpawnInterval();
+    if (state.spawnTimer >= interval && hazards.length < maxConcurrent) {
+      state.spawnTimer = 0;
+      hazards.push(createHazard());
+    }
+  }
+
+  function currentSpawnInterval() {
+    const base = 0.8;
+    const interval = base * (1 - clamp(totalDifficulty * 0.03, 0, 0.6));
+    return clamp(interval, 0.2, base);
+  }
+
+  function currentMaxConcurrent() {
+    const base = 5;
+    const extra = Math.floor(totalDifficulty * 0.15);
+    const penalty = unlockedTypeCount() > 2 ? 1 : 0;
+    return clamp(base + extra - penalty, 4, 14);
+  }
+
+  function unlockedTypeCount() {
+    return 1 + (totalDifficulty > 8 ? 1 : 0) + (totalDifficulty > 16 ? 1 : 0);
+  }
+
+  function createHazard() {
+    const type = pickHazardType();
+    const radius = clamp(state.minDim * 0.018, 8, 18);
+    const { x, y, vx, vy } = spawnFromEdge();
+    return {
+      type,
+      x,
+      y,
+      vx,
+      vy,
+      radius,
+      curvePhase: Math.random() * Math.PI * 2,
+      curveStrength: 0.4 + Math.random() * 0.6,
+      life: 0,
+    };
+  }
+
+  function pickHazardType() {
+    if (totalDifficulty < 6) return "straight";
+    if (totalDifficulty < 14) return Math.random() < 0.7 ? "straight" : "fast";
+    if (totalDifficulty < 22) return Math.random() < 0.5 ? "fast" : "track";
+    const roll = Math.random();
+    if (roll < 0.4) return "fast";
+    if (roll < 0.7) return "track";
+    return "curve";
+  }
+
+  function spawnFromEdge() {
+    const edge = Math.floor(Math.random() * 4);
+    const speed = currentHazardSpeed();
+    let x = 0;
+    let y = 0;
+    let vx = 0;
+    let vy = 0;
+    if (edge === 0) {
+      x = randomRange(0, state.width);
+      y = -20;
+      vx = randomRange(-0.3, 0.3);
+      vy = 1;
+    } else if (edge === 1) {
+      x = state.width + 20;
+      y = randomRange(0, state.height);
+      vx = -1;
+      vy = randomRange(-0.3, 0.3);
+    } else if (edge === 2) {
+      x = randomRange(0, state.width);
+      y = state.height + 20;
+      vx = randomRange(-0.3, 0.3);
+      vy = -1;
+    } else {
+      x = -20;
+      y = randomRange(0, state.height);
+      vx = 1;
+      vy = randomRange(-0.3, 0.3);
+    }
+    const len = Math.hypot(vx, vy) || 1;
+    return { x, y, vx: (vx / len) * speed, vy: (vy / len) * speed };
+  }
+
+  function currentHazardSpeed() {
+    const base = state.minDim * 0.18;
+    const speed = base * (1 + clamp(totalDifficulty * 0.06, 0, 1.6));
+    return speed;
+  }
+
+  function updateHazards(dt) {
+    for (let i = hazards.length - 1; i >= 0; i -= 1) {
+      const hazard = hazards[i];
+      hazard.life += dt;
+      if (hazard.type === "track") {
+        steerTowardCursor(hazard, 0.6 * dt);
+      }
+      if (hazard.type === "curve") {
+        hazard.curvePhase += dt * 2;
+        hazard.vx += Math.cos(hazard.curvePhase) * hazard.curveStrength;
+        hazard.vy += Math.sin(hazard.curvePhase) * hazard.curveStrength;
+      }
+      hazard.x += hazard.vx * dt;
+      hazard.y += hazard.vy * dt;
+      if (hazard.x < -60 || hazard.x > state.width + 60 || hazard.y < -60 || hazard.y > state.height + 60) {
+        hazards.splice(i, 1);
+      }
+    }
+  }
+
+  function steerTowardCursor(hazard, strength) {
+    const dx = state.cursor.x - hazard.x;
+    const dy = state.cursor.y - hazard.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const targetVX = (dx / len) * currentHazardSpeed();
+    const targetVY = (dy / len) * currentHazardSpeed();
+    hazard.vx = lerp(hazard.vx, targetVX, strength);
+    hazard.vy = lerp(hazard.vy, targetVY, strength);
+  }
+
+  function checkCollisions() {
+    if (!state.cursorReady) return;
+    for (let i = hazards.length - 1; i >= 0; i -= 1) {
+      const hazard = hazards[i];
+      const dx = hazard.x - state.cursor.x;
+      const dy = hazard.y - state.cursor.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance <= hazard.radius + 6) {
+        hazards.splice(i, 1);
+        lives -= 1;
+        if (lives <= 0) {
+          const scoreText = Math.floor(score).toString().padStart(6, "0");
+          GameController.gameOverScreen(scoreText);
+          return;
+        }
+      }
+    }
+  }
+
+  function updateHud() {
+    scoreReadout.textContent = Math.floor(score).toString().padStart(6, "0");
+    missedReadout.textContent = "";
+    heartsReadout.textContent = "❤".repeat(lives);
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, state.width, state.height);
+    ctx.fillStyle = state.bgColor;
+    ctx.fillRect(0, 0, state.width, state.height);
+
+    ctx.strokeStyle = "rgba(231, 237, 244, 0.8)";
+    ctx.lineWidth = 2;
+    hazards.forEach((hazard) => {
+      ctx.beginPath();
+      ctx.arc(hazard.x, hazard.y, hazard.radius, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+
+    if (state.cursorReady) {
+      ctx.beginPath();
+      ctx.arc(state.cursor.x, state.cursor.y, 6, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(138, 182, 166, 0.9)";
+      ctx.stroke();
+    }
+  }
+
+  return { start, stop };
+}
+
+function createDodgeFieldPreview() {
+  let running = false;
+  let animationId = null;
+  let lastTime = 0;
+  const ctx = infoCanvas.getContext("2d");
+  const hazards = [];
+  const preview = {
+    width: 0,
+    height: 0,
+    cursor: { x: 60, y: 60 },
+  };
+
+  function start() {
+    preview.width = infoCanvas.width;
+    preview.height = infoCanvas.height;
+    hazards.length = 0;
+    for (let i = 0; i < 10; i += 1) {
+      hazards.push({
+        x: randomRange(0, preview.width),
+        y: randomRange(0, preview.height),
+        vx: randomRange(-80, 80),
+        vy: randomRange(-80, 80),
+        radius: 6 + Math.random() * 4,
+        type: i % 2 === 0 ? "curve" : "track",
+        curvePhase: Math.random() * Math.PI * 2,
+      });
+    }
+    running = true;
+    lastTime = performance.now();
+    loop(lastTime);
+  }
+
+  function stop() {
+    running = false;
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+    }
+  }
+
+  function loop(now) {
+    if (!running) return;
+    const dt = Math.min((now - lastTime) / 1000, 0.033);
+    lastTime = now;
+    preview.cursor.x = preview.width / 2 + Math.cos(now / 600) * preview.width * 0.2;
+    preview.cursor.y = preview.height / 2 + Math.sin(now / 700) * preview.height * 0.2;
+    hazards.forEach((hazard) => {
+      if (hazard.type === "curve") {
+        hazard.curvePhase += dt * 2;
+        hazard.vx += Math.cos(hazard.curvePhase) * 8 * dt;
+        hazard.vy += Math.sin(hazard.curvePhase) * 8 * dt;
+      } else {
+        const dx = preview.cursor.x - hazard.x;
+        const dy = preview.cursor.y - hazard.y;
+        const len = Math.hypot(dx, dy) || 1;
+        hazard.vx = lerp(hazard.vx, (dx / len) * 90, 0.02);
+        hazard.vy = lerp(hazard.vy, (dy / len) * 90, 0.02);
+      }
+      hazard.x += hazard.vx * dt;
+      hazard.y += hazard.vy * dt;
+      if (hazard.x < -20) hazard.x = preview.width + 20;
+      if (hazard.x > preview.width + 20) hazard.x = -20;
+      if (hazard.y < -20) hazard.y = preview.height + 20;
+      if (hazard.y > preview.height + 20) hazard.y = -20;
+    });
+    render();
+    animationId = requestAnimationFrame(loop);
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, preview.width, preview.height);
+    ctx.fillStyle = "#060708";
+    ctx.fillRect(0, 0, preview.width, preview.height);
+    ctx.strokeStyle = "rgba(231, 237, 244, 0.7)";
+    hazards.forEach((hazard) => {
+      ctx.beginPath();
+      ctx.arc(hazard.x, hazard.y, hazard.radius, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+    ctx.beginPath();
+    ctx.arc(preview.cursor.x, preview.cursor.y, 5, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(138, 182, 166, 0.9)";
+    ctx.stroke();
   }
 
   return { start, stop };
