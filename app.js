@@ -1609,19 +1609,20 @@ function createDodgeFieldGame() {
     const sizeTier = pickSizeTier();
     const radius = sizeTierRadius(sizeTier);
     const { x, y, vx, vy } = spawnFromEdge();
+    const speedScale = randomRange(0.55, 1.2);
     return {
       type,
       x,
       y,
-      vx,
-      vy,
+      vx: vx * speedScale,
+      vy: vy * speedScale,
       radius,
       sizeTier,
       curvePhase: Math.random() * Math.PI * 2,
-      curveStrength: 0.4 + Math.random() * 0.6,
-      trackTimeLeft: 0.8 + Math.random() * 0.6,
+      curveStrength: 1.1 + Math.random() * 1.1,
+      trackTimeLeft: 1.6 + Math.random() * 1.2,
       noisePhase: Math.random() * Math.PI * 2,
-      noiseStrength: 0.6 + Math.random() * 0.6,
+      noiseStrength: 1.3 + Math.random() * 1.2,
       laserPhase: "telegraph",
       telegraphTimer: 0.6,
       laserLife: 1.0,
@@ -1727,7 +1728,7 @@ function createDodgeFieldGame() {
       if (hazard.type === "track") {
         if (hazard.trackTimeLeft > 0) {
           hazard.trackTimeLeft = Math.max(0, hazard.trackTimeLeft - dt);
-          steerTowardCursor(hazard, 0.6 * dt);
+          steerTowardCursor(hazard, 1.2 * dt);
         }
       }
       if (hazard.type === "curve") {
