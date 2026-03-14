@@ -2173,6 +2173,9 @@ function createRacingGame() {
       state.player.x = start.x;
       state.player.y = start.y;
       state.player.angle = Math.atan2(next.y - start.y, next.x - start.x);
+      if (state.player.angle > 0) {
+        state.player.angle -= Math.PI;
+      }
       state.player.lap = 0;
       state.player.progressIndex = 0;
       state.player.prevIndex = 0;
@@ -2319,7 +2322,7 @@ function createRacingGame() {
     }
 
     const maxSpeed = 260;
-    state.player.speed = clamp(state.player.speed, -120, maxSpeed);
+    state.player.speed = clamp(state.player.speed, 0, maxSpeed);
     state.player.vx = Math.cos(state.player.angle) * state.player.speed;
     state.player.vy = Math.sin(state.player.angle) * state.player.speed;
     updateCarProgress(state.player, track);
