@@ -992,6 +992,7 @@ function createTimingBarGame() {
       difficulty.size = 0;
       difficulty.move = 0;
       difficulty.feint = 0;
+      repositionZone(sliderPos);
       return;
     }
 
@@ -1012,12 +1013,23 @@ function createTimingBarGame() {
       }
     }
 
-    resetSliderRound();
+    repositionZone(sliderPos);
   }
 
-  function resetSliderRound() {
-    sliderPos = Math.random() < 0.5 ? 0.1 : 0.9;
-    sliderDir = sliderPos < 0.5 ? 1 : -1;
+  function repositionZone(avoidPos) {
+    const minGap = 0.18;
+    let next = zoneCenter;
+    for (let i = 0; i < 10; i += 1) {
+      next = randomRange(0.12, 0.88);
+      if (Math.abs(next - avoidPos) >= minGap) {
+        break;
+      }
+    }
+    if (Math.abs(next - avoidPos) < minGap) {
+      next = clamp(avoidPos + (avoidPos < 0.5 ? minGap : -minGap), 0.12, 0.88);
+    }
+    zoneCenter = next;
+    zoneDir = Math.random() < 0.5 ? -1 : 1;
   }
 
   function updateSlider(dt) {
@@ -1034,7 +1046,6 @@ function createTimingBarGame() {
 
   function updateZone(dt) {
     if (stepCount < 5) {
-      zoneCenter = 0.5;
       return;
     }
     const zoneSpeed = currentZoneSpeed();
