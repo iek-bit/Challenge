@@ -197,7 +197,7 @@ body::after {
 
 .hud-bar {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto auto auto;
   align-items: center;
   gap: 16px;
   pointer-events: auto;
@@ -223,6 +223,13 @@ body::after {
   letter-spacing: 0.2em;
   font-weight: 600;
   font-family: "Oxanium", "Chakra Petch", sans-serif;
+}
+
+.missed-readout {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
 }
 
 .exit-button {
@@ -363,6 +370,10 @@ body::after {
   opacity: 0;
   pointer-events: none;
   transform: translateY(8px);
+}
+
+.is-collapsed {
+  display: none;
 }
 
 .home-screen,
