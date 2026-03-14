@@ -1623,7 +1623,8 @@ function createDodgeFieldGame() {
       noisePhase: Math.random() * Math.PI * 2,
       noiseStrength: 0.6 + Math.random() * 0.6,
       laserPhase: "telegraph",
-      telegraphTimer: 0.7,
+      telegraphTimer: 0.6,
+      laserLife: 1.0,
       beamThickness: radius * 2.6,
       laserLength: 0,
       laserAxis: Math.random() < 0.5 ? "h" : "v",
@@ -1708,6 +1709,11 @@ function createDodgeFieldGame() {
       if (hazard.type === "laser") {
         hazard.telegraphTimer = Math.max(0, hazard.telegraphTimer - dt);
         hazard.laserPhase = hazard.telegraphTimer > 0 ? "telegraph" : "sweep";
+        hazard.laserLife = Math.max(0, hazard.laserLife - dt);
+        if (hazard.laserLife <= 0) {
+          hazards.splice(i, 1);
+          continue;
+        }
         if (hazard.laserLength === 0) {
           hazard.laserLength = hazard.laserAxis === "v" ? state.height : state.width;
           hazard.travelRange = hazard.laserAxis === "v" ? state.width * 0.45 : state.height * 0.45;
@@ -1902,7 +1908,8 @@ function createDodgeFieldPreview(canvas = infoCanvas) {
       radius: 8,
       type: "laser",
       laserPhase: "telegraph",
-      telegraphTimer: 0.7,
+      telegraphTimer: 0.6,
+      laserLife: 1.0,
       beamThickness: 10,
       laserLength: preview.width,
       laserAxis: "h",
@@ -1917,6 +1924,7 @@ function createDodgeFieldPreview(canvas = infoCanvas) {
       type: "laser",
       laserPhase: "telegraph",
       telegraphTimer: 0.5,
+      laserLife: 1.0,
       beamThickness: 8,
       laserLength: preview.height,
       laserAxis: "v",
@@ -1949,6 +1957,11 @@ function createDodgeFieldPreview(canvas = infoCanvas) {
       if (hazard.type === "laser") {
         hazard.telegraphTimer = Math.max(0, hazard.telegraphTimer - dt);
         hazard.laserPhase = hazard.telegraphTimer > 0 ? "telegraph" : "sweep";
+        hazard.laserLife = hazard.laserLife === undefined ? 1.0 : Math.max(0, hazard.laserLife - dt);
+        if (hazard.laserLife <= 0) {
+          hazard.laserLife = 1.0;
+          hazard.telegraphTimer = 0.6;
+        }
         if (hazard.laserLength === undefined) {
           hazard.laserLength = preview.width * 0.5;
           hazard.laserAxis = "h";
