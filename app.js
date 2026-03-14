@@ -145,12 +145,6 @@ function buildGameSections() {
       const previewCanvas = document.createElement("canvas");
       previewCanvas.className = "game-preview";
 
-      const infoButton = document.createElement("button");
-      infoButton.className = "info-button";
-      infoButton.type = "button";
-      infoButton.dataset.gameId = gameId;
-      infoButton.textContent = "?";
-
       const chip = document.createElement("div");
       chip.className = "tag-chip";
       chip.textContent = game.tags.join(" / ");
@@ -163,7 +157,6 @@ function buildGameSections() {
 
       card.innerHTML = iconFactory[game.icon]?.() ?? "";
       card.appendChild(previewCanvas);
-      card.appendChild(infoButton);
       card.appendChild(chip);
       card.appendChild(title);
       card.appendChild(desc);
@@ -268,13 +261,6 @@ const GameController = (() => {
 
 function setupGameCards() {
   gameList.addEventListener("click", (event) => {
-    const infoButton = event.target.closest(".info-button");
-    if (infoButton) {
-      const gameId = infoButton.dataset.gameId;
-      GamePreviewController.open(gameId);
-      event.stopPropagation();
-      return;
-    }
     const button = event.target.closest(".game-card");
     if (!button) return;
     const gameId = button.dataset.gameId;
@@ -346,13 +332,10 @@ const HoverPreviewController = (() => {
 
   function resizeCanvasToCard(canvas, card) {
     const rect = card.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
+    canvas.width = rect.width;
+    canvas.height = rect.height;
     canvas.style.width = `${rect.width}px`;
     canvas.style.height = `${rect.height}px`;
-    const ctx = canvas.getContext("2d");
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   return { start, stop };

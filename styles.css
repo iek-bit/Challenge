@@ -75,6 +75,14 @@ body::after {
   gap: 32px;
 }
 
+body.home-active .app-shell {
+  padding-top: 0;
+}
+
+body.home-active .site-header {
+  display: none;
+}
+
 .site-header {
   display: flex;
   align-items: center;
@@ -116,6 +124,7 @@ body::after {
 .home-screen {
   display: grid;
   place-items: center;
+  min-height: 100vh;
 }
 
 .home-card {
@@ -364,24 +373,6 @@ body::after {
   z-index: 2;
 }
 
-.info-button {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  border: 1px solid rgba(226, 230, 234, 0.2);
-  background: rgba(6, 7, 8, 0.8);
-  color: var(--text);
-  font-size: 14px;
-  cursor: pointer;
-  z-index: 2;
-}
-
-.info-button:hover {
-  border-color: rgba(138, 182, 166, 0.5);
-}
 
 .game-card:hover {
   transform: translateY(-4px);
