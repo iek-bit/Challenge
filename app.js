@@ -1601,6 +1601,7 @@ function createDodgeFieldGame() {
       laserLength: 0,
       laserAxis: Math.random() < 0.5 ? "h" : "v",
       stationary: false,
+      travelRange: 0,
       life: 0,
     };
   }
@@ -1681,7 +1682,8 @@ function createDodgeFieldGame() {
         hazard.telegraphTimer = Math.max(0, hazard.telegraphTimer - dt);
         hazard.laserPhase = hazard.telegraphTimer > 0 ? "telegraph" : "sweep";
         if (hazard.laserLength === 0) {
-          hazard.laserLength = randomRange(state.minDim * 0.35, state.minDim * 0.65);
+          hazard.laserLength = hazard.laserAxis === "v" ? state.height : state.width;
+          hazard.travelRange = hazard.laserAxis === "v" ? state.width * 0.45 : state.height * 0.45;
           hazard.stationary = Math.random() < 0.5;
           if (hazard.stationary) {
             hazard.vx = 0;
@@ -1708,6 +1710,17 @@ function createDodgeFieldGame() {
       if (!hazard.stationary) {
         hazard.x += hazard.vx * dt;
         hazard.y += hazard.vy * dt;
+        if (hazard.type === "laser") {
+          if (hazard.laserAxis === "h") {
+            const minY = state.height * 0.1;
+            const maxY = state.height * 0.9;
+            hazard.y = clamp(hazard.y, minY, maxY);
+          } else {
+            const minX = state.width * 0.1;
+            const maxX = state.width * 0.9;
+            hazard.x = clamp(hazard.x, minX, maxX);
+          }
+        }
       }
       if (hazard.x < -60 || hazard.x > state.width + 60 || hazard.y < -60 || hazard.y > state.height + 60) {
         hazards.splice(i, 1);
@@ -1794,19 +1807,18 @@ function createDodgeFieldGame() {
 }
 
 function laserEndpoints(hazard) {
-  const half = hazard.laserLength * 0.5;
   if (hazard.laserAxis === "v") {
     return {
       x1: hazard.x,
-      y1: hazard.y - half,
+      y1: 0,
       x2: hazard.x,
-      y2: hazard.y + half,
+      y2: hazard.laserLength || hazard.y,
     };
   }
   return {
-    x1: hazard.x - half,
+    x1: 0,
     y1: hazard.y,
-    x2: hazard.x + half,
+    x2: hazard.laserLength || hazard.x,
     y2: hazard.y,
   };
 }
@@ -1865,7 +1877,7 @@ function createDodgeFieldPreview(canvas = infoCanvas) {
       laserPhase: "telegraph",
       telegraphTimer: 0.7,
       beamThickness: 10,
-      laserLength: preview.width * 0.5,
+      laserLength: preview.width,
       laserAxis: "h",
       stationary: false,
     });
@@ -1879,7 +1891,7 @@ function createDodgeFieldPreview(canvas = infoCanvas) {
       laserPhase: "telegraph",
       telegraphTimer: 0.5,
       beamThickness: 8,
-      laserLength: preview.width * 0.4,
+      laserLength: preview.height,
       laserAxis: "v",
       stationary: true,
     });
