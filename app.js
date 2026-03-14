@@ -142,6 +142,9 @@ function buildGameSections() {
       card.type = "button";
       card.dataset.gameId = gameId;
 
+      const previewCanvas = document.createElement("canvas");
+      previewCanvas.className = "game-preview";
+
       const infoButton = document.createElement("button");
       infoButton.className = "info-button";
       infoButton.type = "button";
@@ -159,10 +162,18 @@ function buildGameSections() {
       desc.textContent = game.description;
 
       card.innerHTML = iconFactory[game.icon]?.() ?? "";
+      card.appendChild(previewCanvas);
       card.appendChild(infoButton);
       card.appendChild(chip);
       card.appendChild(title);
       card.appendChild(desc);
+
+      card.addEventListener("mouseenter", () => {
+        HoverPreviewController.start(card, gameId);
+      });
+      card.addEventListener("mouseleave", () => {
+        HoverPreviewController.stop(card);
+      });
 
       grid.appendChild(card);
     });
@@ -297,7 +308,7 @@ const GamePreviewController = (() => {
       preview = null;
     }
     if (game.createPreview) {
-      preview = game.createPreview();
+      preview = game.createPreview(infoCanvas);
       preview.start();
       return;
     }
@@ -308,6 +319,43 @@ const GamePreviewController = (() => {
   }
 
   return { open, close };
+})();
+
+const HoverPreviewController = (() => {
+  const previews = new WeakMap();
+
+  function start(card, gameId) {
+    if (previews.has(card)) return;
+    const game = gameRegistry[gameId];
+    if (!game || !game.createPreview) return;
+    const canvas = card.querySelector(".game-preview");
+    if (!canvas) return;
+    resizeCanvasToCard(canvas, card);
+    const instance = game.createPreview(canvas);
+    instance.start();
+    previews.set(card, instance);
+  }
+
+  function stop(card) {
+    const instance = previews.get(card);
+    if (instance) {
+      instance.stop();
+      previews.delete(card);
+    }
+  }
+
+  function resizeCanvasToCard(canvas, card) {
+    const rect = card.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  return { start, stop };
 })();
 
 function createMouseCircleGame() {
@@ -1247,11 +1295,11 @@ function createTimingBarGame() {
   return { start, stop };
 }
 
-function createMouseCirclePreview() {
+function createMouseCirclePreview(canvas = infoCanvas) {
   let running = false;
   let animationId = null;
   let lastTime = 0;
-  const ctx = infoCanvas.getContext("2d");
+  const ctx = canvas.getContext("2d");
   const preview = {
     width: 0,
     height: 0,
@@ -1261,8 +1309,8 @@ function createMouseCirclePreview() {
   };
 
   function start() {
-    preview.width = infoCanvas.width;
-    preview.height = infoCanvas.height;
+    preview.width = canvas.width;
+    preview.height = canvas.height;
     preview.center.x = preview.width / 2;
     preview.center.y = preview.height / 2;
     running = true;
@@ -1300,19 +1348,19 @@ function createMouseCirclePreview() {
   return { start, stop };
 }
 
-function createPrecisionClicksPreview() {
+function createPrecisionClicksPreview(canvas = infoCanvas) {
   let running = false;
   let animationId = null;
   let lastTime = 0;
-  const ctx = infoCanvas.getContext("2d");
+  const ctx = canvas.getContext("2d");
   const targets = [];
 
   function start() {
     targets.length = 0;
     for (let i = 0; i < 6; i += 1) {
       targets.push({
-        x: randomRange(40, infoCanvas.width - 40),
-        y: randomRange(40, infoCanvas.height - 40),
+        x: randomRange(40, canvas.width - 40),
+        y: randomRange(40, canvas.height - 40),
         r: 10 + Math.random() * 8,
         decoy: i % 3 === 0,
       });
@@ -1339,9 +1387,9 @@ function createPrecisionClicksPreview() {
   }
 
   function render() {
-    ctx.clearRect(0, 0, infoCanvas.width, infoCanvas.height);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = "#060708";
-    ctx.fillRect(0, 0, infoCanvas.width, infoCanvas.height);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     targets.forEach((t) => {
       ctx.beginPath();
       ctx.arc(t.x, t.y, t.r, 0, Math.PI * 2);
@@ -1360,14 +1408,14 @@ function createPrecisionClicksPreview() {
   return { start, stop };
 }
 
-function createTimingBarPreview() {
+function createTimingBarPreview(canvas = infoCanvas) {
   let running = false;
   let animationId = null;
   let lastTime = 0;
   let sliderPos = 0.2;
   let sliderDir = 1;
   let zoneCenter = 0.6;
-  const ctx = infoCanvas.getContext("2d");
+  const ctx = canvas.getContext("2d");
 
   function start() {
     running = true;
@@ -1398,12 +1446,12 @@ function createTimingBarPreview() {
   }
 
   function render() {
-    ctx.clearRect(0, 0, infoCanvas.width, infoCanvas.height);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = "#060708";
-    ctx.fillRect(0, 0, infoCanvas.width, infoCanvas.height);
-    const barWidth = infoCanvas.width * 0.8;
-    const barX = infoCanvas.width * 0.1;
-    const barY = infoCanvas.height * 0.55;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const barWidth = canvas.width * 0.8;
+    const barX = canvas.width * 0.1;
+    const barY = canvas.height * 0.55;
     const zoneWidth = barWidth * 0.16;
     const zoneX = barX + zoneCenter * barWidth - zoneWidth / 2;
     const sliderX = barX + sliderPos * barWidth;
@@ -1700,11 +1748,11 @@ function createDodgeFieldGame() {
   return { start, stop };
 }
 
-function createDodgeFieldPreview() {
+function createDodgeFieldPreview(canvas = infoCanvas) {
   let running = false;
   let animationId = null;
   let lastTime = 0;
-  const ctx = infoCanvas.getContext("2d");
+  const ctx = canvas.getContext("2d");
   const hazards = [];
   const preview = {
     width: 0,
@@ -1713,8 +1761,8 @@ function createDodgeFieldPreview() {
   };
 
   function start() {
-    preview.width = infoCanvas.width;
-    preview.height = infoCanvas.height;
+    preview.width = canvas.width;
+    preview.height = canvas.height;
     hazards.length = 0;
     for (let i = 0; i < 10; i += 1) {
       hazards.push({

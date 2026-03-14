@@ -349,6 +349,21 @@ body::after {
   transition: transform 0.2s ease, border 0.2s ease;
 }
 
+.game-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.game-card > *:not(.game-preview) {
+  position: relative;
+  z-index: 2;
+}
+
 .info-button {
   position: absolute;
   top: 16px;
