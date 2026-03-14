@@ -1596,7 +1596,8 @@ function createDodgeFieldGame() {
 
   function createHazard() {
     const type = pickHazardType();
-    const radius = clamp(state.minDim * 0.018, 8, 18);
+    const sizeTier = pickSizeTier();
+    const radius = sizeTierRadius(sizeTier);
     const { x, y, vx, vy } = spawnFromEdge();
     return {
       type,
@@ -1605,27 +1606,47 @@ function createDodgeFieldGame() {
       vx,
       vy,
       radius,
+      sizeTier,
       curvePhase: Math.random() * Math.PI * 2,
       curveStrength: 0.4 + Math.random() * 0.6,
       trackTimeLeft: 0.8 + Math.random() * 0.6,
+      noisePhase: Math.random() * Math.PI * 2,
+      noiseStrength: 0.6 + Math.random() * 0.6,
+      laserPhase: "telegraph",
+      telegraphTimer: 0.7,
+      beamThickness: radius * 2.6,
       life: 0,
     };
   }
 
   function pickHazardType() {
-    if (totalDifficulty < 6) return "straight";
-    if (totalDifficulty < 14) return Math.random() < 0.7 ? "straight" : "fast";
-    if (totalDifficulty < 22) {
-      const roll = Math.random();
-      if (roll < 0.3) return "fast";
-      if (roll < 0.7) return "straight";
-      return "track";
-    }
+    const pool = ["straight"];
+    if (totalDifficulty > 6) pool.push("fast");
+    if (totalDifficulty > 12) pool.push("track");
+    if (totalDifficulty > 18) pool.push("curve");
+    if (totalDifficulty > 24) pool.push("wander");
+    if (totalDifficulty > 30) pool.push("laser");
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  function pickSizeTier() {
     const roll = Math.random();
-    if (roll < 0.35) return "fast";
-    if (roll < 0.55) return "straight";
-    if (roll < 0.8) return "track";
-    return "curve";
+    if (totalDifficulty < 10) {
+      return roll < 0.7 ? "small" : roll < 0.95 ? "medium" : "large";
+    }
+    if (totalDifficulty < 20) {
+      return roll < 0.5 ? "small" : roll < 0.85 ? "medium" : "large";
+    }
+    return roll < 0.3 ? "small" : roll < 0.7 ? "medium" : "large";
+  }
+
+  function sizeTierRadius(tier) {
+    const small = clamp(state.minDim * 0.012, 8, 12);
+    const medium = clamp(state.minDim * 0.018, 12, 18);
+    const large = clamp(state.minDim * 0.026, 18, 26);
+    if (tier === "small") return small;
+    if (tier === "large") return large;
+    return medium;
   }
 
   function spawnFromEdge() {
@@ -1681,6 +1702,15 @@ function createDodgeFieldGame() {
         hazard.vx += Math.cos(hazard.curvePhase) * hazard.curveStrength;
         hazard.vy += Math.sin(hazard.curvePhase) * hazard.curveStrength;
       }
+      if (hazard.type === "wander") {
+        hazard.noisePhase += dt * 3;
+        hazard.vx += Math.cos(hazard.noisePhase) * hazard.noiseStrength;
+        hazard.vy += Math.sin(hazard.noisePhase * 0.8) * hazard.noiseStrength;
+      }
+      if (hazard.type === "laser") {
+        hazard.telegraphTimer = Math.max(0, hazard.telegraphTimer - dt);
+        hazard.laserPhase = hazard.telegraphTimer > 0 ? "telegraph" : "sweep";
+      }
       hazard.x += hazard.vx * dt;
       hazard.y += hazard.vy * dt;
       if (hazard.x < -60 || hazard.x > state.width + 60 || hazard.y < -60 || hazard.y > state.height + 60) {
@@ -1703,17 +1733,25 @@ function createDodgeFieldGame() {
     if (!state.cursorReady) return;
     for (let i = hazards.length - 1; i >= 0; i -= 1) {
       const hazard = hazards[i];
-      const dx = hazard.x - state.cursor.x;
-      const dy = hazard.y - state.cursor.y;
-      const distance = Math.hypot(dx, dy);
-      if (distance <= hazard.radius + 6) {
-        hazards.splice(i, 1);
-        lives -= 1;
-        if (lives <= 0) {
-          const scoreText = Math.floor(score).toString().padStart(6, "0");
-          GameController.gameOverScreen(scoreText);
-          return;
+      if (hazard.type === "laser" && hazard.laserPhase === "sweep") {
+        const distance = Math.abs(hazard.y - state.cursor.y);
+        if (distance <= hazard.beamThickness) {
+          hazards.splice(i, 1);
+          lives -= 1;
         }
+      } else {
+        const dx = hazard.x - state.cursor.x;
+        const dy = hazard.y - state.cursor.y;
+        const distance = Math.hypot(dx, dy);
+        if (distance <= hazard.radius + 6) {
+          hazards.splice(i, 1);
+          lives -= 1;
+        }
+      }
+      if (lives <= 0) {
+        const scoreText = Math.floor(score).toString().padStart(6, "0");
+        GameController.gameOverScreen(scoreText);
+        return;
       }
     }
   }
@@ -1729,12 +1767,22 @@ function createDodgeFieldGame() {
     ctx.fillStyle = state.bgColor;
     ctx.fillRect(0, 0, state.width, state.height);
 
-    ctx.strokeStyle = "rgba(231, 237, 244, 0.8)";
-    ctx.lineWidth = 2;
     hazards.forEach((hazard) => {
-      ctx.beginPath();
-      ctx.arc(hazard.x, hazard.y, hazard.radius, 0, Math.PI * 2);
-      ctx.stroke();
+      if (hazard.type === "laser") {
+        ctx.strokeStyle = hazard.laserPhase === "telegraph" ? "rgba(138, 182, 166, 0.35)" : "rgba(231, 237, 244, 0.9)";
+        ctx.lineWidth = hazard.laserPhase === "telegraph" ? 1 : hazard.beamThickness;
+        ctx.beginPath();
+        ctx.moveTo(0, hazard.y);
+        ctx.lineTo(state.width, hazard.y);
+        ctx.stroke();
+        ctx.lineWidth = 2;
+      } else {
+        ctx.strokeStyle = "rgba(231, 237, 244, 0.8)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(hazard.x, hazard.y, hazard.radius, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     });
 
     if (state.cursorReady) {
@@ -1764,17 +1812,33 @@ function createDodgeFieldPreview(canvas = infoCanvas) {
     preview.width = canvas.width;
     preview.height = canvas.height;
     hazards.length = 0;
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 12; i += 1) {
       hazards.push({
         x: randomRange(0, preview.width),
         y: randomRange(0, preview.height),
         vx: randomRange(-80, 80),
         vy: randomRange(-80, 80),
-        radius: 6 + Math.random() * 4,
-        type: i % 2 === 0 ? "curve" : "track",
+        radius: 6 + Math.random() * 10,
+        type: i % 3 === 0 ? "curve" : i % 3 === 1 ? "track" : "wander",
         curvePhase: Math.random() * Math.PI * 2,
+        noisePhase: Math.random() * Math.PI * 2,
+        noiseStrength: 0.6 + Math.random() * 0.6,
+        laserPhase: "telegraph",
+        telegraphTimer: 0.6,
+        beamThickness: 10,
       });
     }
+    hazards.push({
+      x: 0,
+      y: preview.height * 0.4,
+      vx: 0,
+      vy: 0,
+      radius: 8,
+      type: "laser",
+      laserPhase: "telegraph",
+      telegraphTimer: 0.7,
+      beamThickness: 12,
+    });
     running = true;
     lastTime = performance.now();
     loop(lastTime);
@@ -1794,16 +1858,24 @@ function createDodgeFieldPreview(canvas = infoCanvas) {
     preview.cursor.x = preview.width / 2 + Math.cos(now / 600) * preview.width * 0.2;
     preview.cursor.y = preview.height / 2 + Math.sin(now / 700) * preview.height * 0.2;
     hazards.forEach((hazard) => {
+      if (hazard.type === "laser") {
+        hazard.telegraphTimer = Math.max(0, hazard.telegraphTimer - dt);
+        hazard.laserPhase = hazard.telegraphTimer > 0 ? "telegraph" : "sweep";
+      }
       if (hazard.type === "curve") {
         hazard.curvePhase += dt * 2;
         hazard.vx += Math.cos(hazard.curvePhase) * 8 * dt;
         hazard.vy += Math.sin(hazard.curvePhase) * 8 * dt;
-      } else {
+      } else if (hazard.type === "track") {
         const dx = preview.cursor.x - hazard.x;
         const dy = preview.cursor.y - hazard.y;
         const len = Math.hypot(dx, dy) || 1;
         hazard.vx = lerp(hazard.vx, (dx / len) * 90, 0.02);
         hazard.vy = lerp(hazard.vy, (dy / len) * 90, 0.02);
+      } else if (hazard.type === "wander") {
+        hazard.noisePhase += dt * 3;
+        hazard.vx += Math.cos(hazard.noisePhase) * 6 * dt;
+        hazard.vy += Math.sin(hazard.noisePhase * 0.8) * 6 * dt;
       }
       hazard.x += hazard.vx * dt;
       hazard.y += hazard.vy * dt;
@@ -1822,6 +1894,18 @@ function createDodgeFieldPreview(canvas = infoCanvas) {
     ctx.fillRect(0, 0, preview.width, preview.height);
     ctx.strokeStyle = "rgba(231, 237, 244, 0.7)";
     hazards.forEach((hazard) => {
+      if (hazard.type === "laser") {
+        ctx.strokeStyle = hazard.laserPhase === "telegraph" ? "rgba(138, 182, 166, 0.35)" : "rgba(231, 237, 244, 0.9)";
+        ctx.lineWidth = hazard.laserPhase === "telegraph" ? 1 : hazard.beamThickness;
+        ctx.beginPath();
+        ctx.moveTo(0, hazard.y);
+        ctx.lineTo(preview.width, hazard.y);
+        ctx.stroke();
+        ctx.lineWidth = 2;
+        return;
+      }
+      ctx.strokeStyle = "rgba(231, 237, 244, 0.7)";
+      ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(hazard.x, hazard.y, hazard.radius, 0, Math.PI * 2);
       ctx.stroke();
