@@ -2244,12 +2244,11 @@ function createRacingGame() {
     let turn = keys.has("a") || keys.has("arrowleft") ? -1 : keys.has("d") || keys.has("arrowright") ? 1 : 0;
     if (mode === "endless") {
       accel = 0;
-      const maxAngle = 0.55;
-      const turnRate = 2.2;
-      player.angle += turn * turnRate * dt;
-      player.angle = clamp(player.angle, -maxAngle, maxAngle);
+      const maxTilt = 0.35;
+      const tilt = clamp(turn * maxTilt, -maxTilt, maxTilt);
+      player.angle = -Math.PI / 2 + tilt;
       const lateralSpeed = 180;
-      player.x += Math.sin(player.angle) * lateralSpeed * dt;
+      player.x += Math.sin(tilt) * lateralSpeed * dt;
       player.y = state.height * 0.78;
       player.vx = 0;
       player.vy = 0;
@@ -2498,9 +2497,10 @@ function createRacingGame() {
       });
     }
     const centerline = smoothClosedPath(points, 10);
+    const aligned = alignTrackUp(centerline, { x: cx, y: cy });
     const trackWidth = state.minDim * 0.18;
-    const { inner, outer } = buildTrackEdges(centerline, trackWidth);
-    return { centerline, inner, outer, width: trackWidth };
+    const { inner, outer } = buildTrackEdges(aligned, trackWidth);
+    return { centerline: aligned, inner, outer, width: trackWidth };
   }
 
   function smoothClosedPath(points, samplesPerSegment) {
@@ -2566,7 +2566,7 @@ function createRacingGame() {
     const diff = angleDelta(noisyDesired, bot.angle);
     bot.angle += clamp(diff, -turnRate * dt, turnRate * dt);
 
-    const accel = lerp(90, 170, skill);
+    const accel = 240;
     bot.throttle = clamp(bot.throttle + accel * dt, 0, maxSpeed);
     bot.speed = lerp(bot.speed, bot.throttle, 0.12);
     bot.speed = clamp(bot.speed, 0, maxSpeed);
@@ -2708,6 +2708,23 @@ function createRacingGame() {
     ctx.moveTo(start.x - nx * half, start.y - ny * half);
     ctx.lineTo(start.x + nx * half, start.y + ny * half);
     ctx.stroke();
+  }
+
+  function alignTrackUp(centerline, center) {
+    const start = centerline[0];
+    const next = centerline[1] ?? start;
+    const angle = Math.atan2(next.y - start.y, next.x - start.x);
+    const rotateBy = -Math.PI / 2 - angle;
+    const cos = Math.cos(rotateBy);
+    const sin = Math.sin(rotateBy);
+    return centerline.map((point) => {
+      const dx = point.x - center.x;
+      const dy = point.y - center.y;
+      return {
+        x: center.x + dx * cos - dy * sin,
+        y: center.y + dx * sin + dy * cos,
+      };
+    });
   }
 
   function angleDelta(target, current) {
