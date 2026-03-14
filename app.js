@@ -2099,6 +2099,7 @@ function createRacingGame() {
   let spawnTimer = 0;
   let laneMarkerOffset = 0;
   let hitCooldown = 0;
+  let camera = { x: 0, y: 0 };
 
   const ctx = gameCanvas.getContext("2d");
   const keys = new Set();
@@ -2177,6 +2178,7 @@ function createRacingGame() {
       state.player.prevIndex = 0;
       state.player.trackDist = 0;
     }
+    camera = { x: state.player.x, y: state.player.y };
     bots = createBots();
     trafficCars = [];
     spawnTimer = 0;
@@ -2237,6 +2239,9 @@ function createRacingGame() {
     const player = state.player;
     let accel = keys.has("w") || keys.has("arrowup") ? 240 : keys.has("s") || keys.has("arrowdown") ? -180 : 0;
     let turn = keys.has("a") || keys.has("arrowleft") ? -1 : keys.has("d") || keys.has("arrowright") ? 1 : 0;
+    if (mode === "endless") {
+      accel = 0;
+    }
     if (mode === "race" && !raceStarted) {
       if (accel > 0) {
         raceStarted = true;
@@ -2268,7 +2273,9 @@ function createRacingGame() {
   function updateEndless(dt) {
     const difficulty = clamp(elapsed / 22, 0, 6);
     const maxSpeed = 240 + difficulty * 80;
-    state.player.speed = clamp(state.player.speed, -180, maxSpeed);
+    const cruise = lerp(160, maxSpeed * 0.92, difficulty / 6);
+    state.player.speed = lerp(state.player.speed, cruise, 0.06);
+    state.player.speed = clamp(state.player.speed, 60, maxSpeed);
 
     const minX = state.roadLeft + 12;
     const maxX = state.roadRight - 12;
@@ -2304,6 +2311,8 @@ function createRacingGame() {
 
     const maxSpeed = 260;
     state.player.speed = clamp(state.player.speed, -120, maxSpeed);
+    state.player.vx = Math.cos(state.player.angle) * state.player.speed;
+    state.player.vy = Math.sin(state.player.angle) * state.player.speed;
     updateCarProgress(state.player, track);
     playerLap = state.player.lap ?? 0;
 
@@ -2320,6 +2329,9 @@ function createRacingGame() {
 
     handleOffTrack(state.player, track);
     bots.forEach((bot) => handleOffTrack(bot, track));
+
+    camera.x = lerp(camera.x, state.player.x, 0.12);
+    camera.y = lerp(camera.y, state.player.y, 0.12);
 
     const place = calculatePlace(state.player, bots);
     missedReadout.textContent = `Place ${place}/6`;
@@ -2368,14 +2380,20 @@ function createRacingGame() {
       }
       ctx.restore();
     } else if (track) {
+      ctx.save();
+      ctx.translate(state.width / 2 - camera.x, state.height / 2 - camera.y);
       drawTrack(track);
     }
 
-    renderCar(state.player);
     if (mode === "endless") {
+      renderCar(state.player);
       trafficCars.forEach(renderTrafficCar);
     } else {
+      renderCar(state.player);
       bots.forEach(renderCar);
+      if (track) {
+        ctx.restore();
+      }
     }
   }
 
@@ -2384,7 +2402,21 @@ function createRacingGame() {
     ctx.translate(car.x, car.y);
     ctx.rotate(car.angle + Math.PI / 2);
     ctx.beginPath();
-    ctx.rect(-car.width / 2, -car.height / 2, car.width, car.height);
+    const bodyW = car.width;
+    const bodyH = car.height;
+    ctx.rect(-bodyW / 2, -bodyH / 2, bodyW, bodyH);
+    ctx.moveTo(-bodyW * 0.3, -bodyH * 0.15);
+    ctx.lineTo(bodyW * 0.3, -bodyH * 0.15);
+    ctx.moveTo(-bodyW * 0.3, bodyH * 0.2);
+    ctx.lineTo(bodyW * 0.3, bodyH * 0.2);
+    ctx.moveTo(-bodyW * 0.45, -bodyH * 0.35);
+    ctx.lineTo(-bodyW * 0.45, -bodyH * 0.1);
+    ctx.moveTo(bodyW * 0.45, -bodyH * 0.35);
+    ctx.lineTo(bodyW * 0.45, -bodyH * 0.1);
+    ctx.moveTo(-bodyW * 0.45, bodyH * 0.1);
+    ctx.lineTo(-bodyW * 0.45, bodyH * 0.35);
+    ctx.moveTo(bodyW * 0.45, bodyH * 0.1);
+    ctx.lineTo(bodyW * 0.45, bodyH * 0.35);
     ctx.stroke();
     ctx.restore();
   }
@@ -2394,7 +2426,21 @@ function createRacingGame() {
     ctx.translate(car.x, car.y);
     ctx.rotate(-Math.PI / 2);
     ctx.beginPath();
-    ctx.rect(-car.width / 2, -car.height / 2, car.width, car.height);
+    const bodyW = car.width;
+    const bodyH = car.height;
+    ctx.rect(-bodyW / 2, -bodyH / 2, bodyW, bodyH);
+    ctx.moveTo(-bodyW * 0.3, -bodyH * 0.15);
+    ctx.lineTo(bodyW * 0.3, -bodyH * 0.15);
+    ctx.moveTo(-bodyW * 0.3, bodyH * 0.2);
+    ctx.lineTo(bodyW * 0.3, bodyH * 0.2);
+    ctx.moveTo(-bodyW * 0.45, -bodyH * 0.35);
+    ctx.lineTo(-bodyW * 0.45, -bodyH * 0.1);
+    ctx.moveTo(bodyW * 0.45, -bodyH * 0.35);
+    ctx.lineTo(bodyW * 0.45, -bodyH * 0.1);
+    ctx.moveTo(-bodyW * 0.45, bodyH * 0.1);
+    ctx.lineTo(-bodyW * 0.45, bodyH * 0.35);
+    ctx.moveTo(bodyW * 0.45, bodyH * 0.1);
+    ctx.lineTo(bodyW * 0.45, bodyH * 0.35);
     ctx.stroke();
     ctx.restore();
   }
@@ -2430,16 +2476,16 @@ function createRacingGame() {
     const points = [];
     const cx = state.width / 2;
     const cy = state.height / 2;
-    const radius = state.minDim * 0.26;
-    for (let i = 0; i < 12; i += 1) {
-      const angle = (i / 12) * Math.PI * 2;
-      const jitter = randomRange(-35, 35);
+    const radius = state.minDim * 0.85;
+    for (let i = 0; i < 16; i += 1) {
+      const angle = (i / 16) * Math.PI * 2;
+      const jitter = randomRange(-120, 120);
       points.push({
         x: cx + Math.cos(angle) * (radius + jitter),
         y: cy + Math.sin(angle) * (radius + jitter),
       });
     }
-    const centerline = smoothClosedPath(points, 8);
+    const centerline = smoothClosedPath(points, 10);
     const trackWidth = state.minDim * 0.18;
     const { inner, outer } = buildTrackEdges(centerline, trackWidth);
     return { centerline, inner, outer, width: trackWidth };
@@ -2508,12 +2554,14 @@ function createRacingGame() {
     const diff = angleDelta(noisyDesired, bot.angle);
     bot.angle += clamp(diff, -turnRate * dt, turnRate * dt);
 
-    const accel = lerp(140, 240, skill);
+    const accel = lerp(90, 170, skill);
     bot.throttle = clamp(bot.throttle + accel * dt, 0, maxSpeed);
-    bot.speed = lerp(bot.speed, bot.throttle, 0.18);
+    bot.speed = lerp(bot.speed, bot.throttle, 0.12);
     bot.speed = clamp(bot.speed, 0, maxSpeed);
-    bot.x += Math.cos(bot.angle) * bot.speed * dt;
-    bot.y += Math.sin(bot.angle) * bot.speed * dt;
+    bot.vx = Math.cos(bot.angle) * bot.speed;
+    bot.vy = Math.sin(bot.angle) * bot.speed;
+    bot.x += bot.vx * dt;
+    bot.y += bot.vy * dt;
   }
 
   function updateCarProgress(car, trackData) {
@@ -2546,13 +2594,22 @@ function createRacingGame() {
     if (!trackData) return;
     const half = trackData.width / 2;
     if (car.trackDist > half - 6) {
-      car.speed *= 0.85;
       const nearest = trackData.centerline[car.progressIndex];
-      const nx = nearest.x - car.x;
-      const ny = nearest.y - car.y;
+      const nx = car.x - nearest.x;
+      const ny = car.y - nearest.y;
       const len = Math.hypot(nx, ny) || 1;
-      car.x += (nx / len) * 8;
-      car.y += (ny / len) * 8;
+      const normalX = nx / len;
+      const normalY = ny / len;
+      const vDot = (car.vx ?? 0) * normalX + (car.vy ?? 0) * normalY;
+      const bounceX = (car.vx ?? 0) - 2 * vDot * normalX;
+      const bounceY = (car.vy ?? 0) - 2 * vDot * normalY;
+      car.vx = bounceX * 0.7;
+      car.vy = bounceY * 0.7;
+      car.speed = Math.hypot(car.vx, car.vy);
+      car.angle = Math.atan2(car.vy, car.vx);
+      const clampDist = half - 8;
+      car.x = nearest.x + normalX * clampDist;
+      car.y = nearest.y + normalY * clampDist;
     }
   }
 
@@ -2577,17 +2634,37 @@ function createRacingGame() {
   function applyRaceCollision(a, b) {
     const dx = a.x - b.x;
     const dy = a.y - b.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const pushX = dx / len;
-    const pushY = dy / len;
-    a.x += pushX * 6;
-    a.y += pushY * 6;
-    b.x -= pushX * 6;
-    b.y -= pushY * 6;
-    a.speed *= 0.7;
-    b.speed *= 0.85;
-    a.angle += randomRange(-0.15, 0.15);
-    b.angle += randomRange(-0.12, 0.12);
+    const dist = Math.hypot(dx, dy) || 1;
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    const vaX = a.vx ?? Math.cos(a.angle) * a.speed;
+    const vaY = a.vy ?? Math.sin(a.angle) * a.speed;
+    const vbX = b.vx ?? Math.cos(b.angle) * b.speed;
+    const vbY = b.vy ?? Math.sin(b.angle) * b.speed;
+    const relX = vaX - vbX;
+    const relY = vaY - vbY;
+    const relDot = relX * nx + relY * ny;
+    if (relDot > 0) return;
+
+    const impulse = -1.2 * relDot;
+    const impX = impulse * nx;
+    const impY = impulse * ny;
+
+    a.vx = (vaX + impX) * 0.9;
+    a.vy = (vaY + impY) * 0.9;
+    b.vx = (vbX - impX) * 0.9;
+    b.vy = (vbY - impY) * 0.9;
+
+    a.x += nx * 6;
+    a.y += ny * 6;
+    b.x -= nx * 6;
+    b.y -= ny * 6;
+
+    a.speed = Math.hypot(a.vx, a.vy);
+    b.speed = Math.hypot(b.vx, b.vy);
+    a.angle = Math.atan2(a.vy, a.vx);
+    b.angle = Math.atan2(b.vy, b.vx);
   }
 
   function drawTrack(trackData) {
