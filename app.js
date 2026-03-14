@@ -1559,6 +1559,7 @@ function createDodgeFieldGame() {
       radius,
       curvePhase: Math.random() * Math.PI * 2,
       curveStrength: 0.4 + Math.random() * 0.6,
+      trackTimeLeft: 0.8 + Math.random() * 0.6,
       life: 0,
     };
   }
@@ -1566,10 +1567,16 @@ function createDodgeFieldGame() {
   function pickHazardType() {
     if (totalDifficulty < 6) return "straight";
     if (totalDifficulty < 14) return Math.random() < 0.7 ? "straight" : "fast";
-    if (totalDifficulty < 22) return Math.random() < 0.5 ? "fast" : "track";
+    if (totalDifficulty < 22) {
+      const roll = Math.random();
+      if (roll < 0.3) return "fast";
+      if (roll < 0.7) return "straight";
+      return "track";
+    }
     const roll = Math.random();
-    if (roll < 0.4) return "fast";
-    if (roll < 0.7) return "track";
+    if (roll < 0.35) return "fast";
+    if (roll < 0.55) return "straight";
+    if (roll < 0.8) return "track";
     return "curve";
   }
 
@@ -1606,8 +1613,8 @@ function createDodgeFieldGame() {
   }
 
   function currentHazardSpeed() {
-    const base = state.minDim * 0.18;
-    const speed = base * (1 + clamp(totalDifficulty * 0.06, 0, 1.6));
+    const base = state.minDim * 0.22;
+    const speed = base * (1 + clamp(totalDifficulty * 0.08, 0, 2.6));
     return speed;
   }
 
@@ -1616,7 +1623,10 @@ function createDodgeFieldGame() {
       const hazard = hazards[i];
       hazard.life += dt;
       if (hazard.type === "track") {
-        steerTowardCursor(hazard, 0.6 * dt);
+        if (hazard.trackTimeLeft > 0) {
+          hazard.trackTimeLeft = Math.max(0, hazard.trackTimeLeft - dt);
+          steerTowardCursor(hazard, 0.6 * dt);
+        }
       }
       if (hazard.type === "curve") {
         hazard.curvePhase += dt * 2;
