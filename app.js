@@ -574,9 +574,11 @@ function createPrecisionClicksGame() {
   let streak = 0;
   let started = false;
   let missedTargets = 0;
+  let graceTime = 0;
   let totalDifficulty = 0;
 
   const stepDuration = 5;
+  const graceDuration = 2;
   const maxMissed = 3;
   const targets = [];
   const ctx = gameCanvas.getContext("2d");
@@ -613,6 +615,7 @@ function createPrecisionClicksGame() {
     score = 0;
     streak = 0;
     missedTargets = 0;
+    graceTime = 0;
     started = false;
     gameTime = 0;
     stepTimer = 0;
@@ -651,9 +654,13 @@ function createPrecisionClicksGame() {
       stepTimer += dt;
       spawnTimer += dt;
 
-      if (stepTimer >= stepDuration) {
-        stepTimer -= stepDuration;
-        applyDifficultyStep();
+      if (graceTime > 0) {
+        graceTime = Math.max(0, graceTime - dt);
+      } else {
+        if (stepTimer >= stepDuration) {
+          stepTimer -= stepDuration;
+          applyDifficultyStep();
+        }
       }
 
       const interval = currentSpawnInterval();
@@ -709,6 +716,7 @@ function createPrecisionClicksGame() {
       difficulty.decoy = 0;
       targets.length = 0;
       missedTargets = 0;
+      graceTime = 0;
       spawnTarget(true);
       return;
     }
@@ -761,6 +769,7 @@ function createPrecisionClicksGame() {
         targets.splice(i, 1);
         if (!target.isDecoy) {
           missedTargets += 1;
+          graceTime = graceDuration;
           if (missedTargets >= maxMissed) {
             GameController.stop();
             return;
@@ -796,7 +805,8 @@ function createPrecisionClicksGame() {
 
   function currentTargetLifetime() {
     const base = 1.1;
-    const life = base * (1 - difficulty.life * 0.06);
+    const reduction = graceTime > 0 ? 0 : difficulty.life * 0.06;
+    const life = base * (1 - reduction);
     return clamp(life, 0.35, base);
   }
 
