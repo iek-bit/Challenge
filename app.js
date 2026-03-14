@@ -1598,6 +1598,9 @@ function createDodgeFieldGame() {
       laserPhase: "telegraph",
       telegraphTimer: 0.7,
       beamThickness: radius * 2.6,
+      laserLength: 0,
+      laserAxis: Math.random() < 0.5 ? "h" : "v",
+      stationary: false,
       life: 0,
     };
   }
@@ -1674,6 +1677,18 @@ function createDodgeFieldGame() {
     for (let i = hazards.length - 1; i >= 0; i -= 1) {
       const hazard = hazards[i];
       hazard.life += dt;
+      if (hazard.type === "laser") {
+        hazard.telegraphTimer = Math.max(0, hazard.telegraphTimer - dt);
+        hazard.laserPhase = hazard.telegraphTimer > 0 ? "telegraph" : "sweep";
+        if (hazard.laserLength === 0) {
+          hazard.laserLength = randomRange(state.minDim * 0.35, state.minDim * 0.65);
+          hazard.stationary = Math.random() < 0.5;
+          if (hazard.stationary) {
+            hazard.vx = 0;
+            hazard.vy = 0;
+          }
+        }
+      }
       if (hazard.type === "track") {
         if (hazard.trackTimeLeft > 0) {
           hazard.trackTimeLeft = Math.max(0, hazard.trackTimeLeft - dt);
@@ -1690,12 +1705,10 @@ function createDodgeFieldGame() {
         hazard.vx += Math.cos(hazard.noisePhase) * hazard.noiseStrength;
         hazard.vy += Math.sin(hazard.noisePhase * 0.8) * hazard.noiseStrength;
       }
-      if (hazard.type === "laser") {
-        hazard.telegraphTimer = Math.max(0, hazard.telegraphTimer - dt);
-        hazard.laserPhase = hazard.telegraphTimer > 0 ? "telegraph" : "sweep";
+      if (!hazard.stationary) {
+        hazard.x += hazard.vx * dt;
+        hazard.y += hazard.vy * dt;
       }
-      hazard.x += hazard.vx * dt;
-      hazard.y += hazard.vy * dt;
       if (hazard.x < -60 || hazard.x > state.width + 60 || hazard.y < -60 || hazard.y > state.height + 60) {
         hazards.splice(i, 1);
       }
@@ -1717,7 +1730,7 @@ function createDodgeFieldGame() {
     for (let i = hazards.length - 1; i >= 0; i -= 1) {
       const hazard = hazards[i];
       if (hazard.type === "laser" && hazard.laserPhase === "sweep") {
-        const distance = Math.abs(hazard.y - state.cursor.y);
+        const { distance } = pointToLaserDistance(hazard, state.cursor.x, state.cursor.y);
         if (distance <= hazard.beamThickness) {
           hazards.splice(i, 1);
           lives -= 1;
@@ -1755,8 +1768,9 @@ function createDodgeFieldGame() {
         ctx.strokeStyle = hazard.laserPhase === "telegraph" ? "rgba(138, 182, 166, 0.35)" : "rgba(231, 237, 244, 0.9)";
         ctx.lineWidth = hazard.laserPhase === "telegraph" ? 1 : hazard.beamThickness;
         ctx.beginPath();
-        ctx.moveTo(0, hazard.y);
-        ctx.lineTo(state.width, hazard.y);
+        const { x1, y1, x2, y2 } = laserEndpoints(hazard);
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
         ctx.stroke();
         ctx.lineWidth = 2;
       } else {
@@ -1777,6 +1791,36 @@ function createDodgeFieldGame() {
   }
 
   return { start, stop };
+}
+
+function laserEndpoints(hazard) {
+  const half = hazard.laserLength * 0.5;
+  if (hazard.laserAxis === "v") {
+    return {
+      x1: hazard.x,
+      y1: hazard.y - half,
+      x2: hazard.x,
+      y2: hazard.y + half,
+    };
+  }
+  return {
+    x1: hazard.x - half,
+    y1: hazard.y,
+    x2: hazard.x + half,
+    y2: hazard.y,
+  };
+}
+
+function pointToLaserDistance(hazard, px, py) {
+  const { x1, y1, x2, y2 } = laserEndpoints(hazard);
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len2 = dx * dx + dy * dy || 1;
+  const t = clamp(((px - x1) * dx + (py - y1) * dy) / len2, 0, 1);
+  const cx = x1 + t * dx;
+  const cy = y1 + t * dy;
+  const distance = Math.hypot(px - cx, py - cy);
+  return { distance, cx, cy };
 }
 
 function createDodgeFieldPreview(canvas = infoCanvas) {
@@ -1812,15 +1856,32 @@ function createDodgeFieldPreview(canvas = infoCanvas) {
       });
     }
     hazards.push({
-      x: 0,
-      y: preview.height * 0.4,
-      vx: 0,
+      x: preview.width * 0.5,
+      y: preview.height * 0.35,
+      vx: 40,
       vy: 0,
       radius: 8,
       type: "laser",
       laserPhase: "telegraph",
       telegraphTimer: 0.7,
-      beamThickness: 12,
+      beamThickness: 10,
+      laserLength: preview.width * 0.5,
+      laserAxis: "h",
+      stationary: false,
+    });
+    hazards.push({
+      x: preview.width * 0.2,
+      y: preview.height * 0.7,
+      vx: 0,
+      vy: 0,
+      radius: 8,
+      type: "laser",
+      laserPhase: "telegraph",
+      telegraphTimer: 0.5,
+      beamThickness: 8,
+      laserLength: preview.width * 0.4,
+      laserAxis: "v",
+      stationary: true,
     });
     running = true;
     lastTime = performance.now();
@@ -1844,6 +1905,11 @@ function createDodgeFieldPreview(canvas = infoCanvas) {
       if (hazard.type === "laser") {
         hazard.telegraphTimer = Math.max(0, hazard.telegraphTimer - dt);
         hazard.laserPhase = hazard.telegraphTimer > 0 ? "telegraph" : "sweep";
+        if (hazard.laserLength === undefined) {
+          hazard.laserLength = preview.width * 0.5;
+          hazard.laserAxis = "h";
+          hazard.stationary = false;
+        }
       }
       if (hazard.type === "curve") {
         hazard.curvePhase += dt * 2;
@@ -1860,8 +1926,10 @@ function createDodgeFieldPreview(canvas = infoCanvas) {
         hazard.vx += Math.cos(hazard.noisePhase) * 6 * dt;
         hazard.vy += Math.sin(hazard.noisePhase * 0.8) * 6 * dt;
       }
-      hazard.x += hazard.vx * dt;
-      hazard.y += hazard.vy * dt;
+      if (!hazard.stationary) {
+        hazard.x += hazard.vx * dt;
+        hazard.y += hazard.vy * dt;
+      }
       if (hazard.x < -20) hazard.x = preview.width + 20;
       if (hazard.x > preview.width + 20) hazard.x = -20;
       if (hazard.y < -20) hazard.y = preview.height + 20;
@@ -1881,8 +1949,9 @@ function createDodgeFieldPreview(canvas = infoCanvas) {
         ctx.strokeStyle = hazard.laserPhase === "telegraph" ? "rgba(138, 182, 166, 0.35)" : "rgba(231, 237, 244, 0.9)";
         ctx.lineWidth = hazard.laserPhase === "telegraph" ? 1 : hazard.beamThickness;
         ctx.beginPath();
-        ctx.moveTo(0, hazard.y);
-        ctx.lineTo(preview.width, hazard.y);
+        const { x1, y1, x2, y2 } = laserEndpoints(hazard);
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
         ctx.stroke();
         ctx.lineWidth = 2;
         return;

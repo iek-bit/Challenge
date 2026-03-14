@@ -79,10 +79,6 @@ body.home-active .app-shell {
   padding-top: 0;
 }
 
-body.home-active .site-header {
-  display: none;
-}
-
 .site-header {
   display: flex;
   align-items: center;
@@ -135,6 +131,15 @@ body.home-active .site-header {
   text-align: center;
   width: min(520px, 92vw);
   box-shadow: 0 14px 40px var(--shadow);
+}
+
+.home-title {
+  font-family: "Oxanium", "Chakra Petch", sans-serif;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
 }
 
 .home-card h1 {
