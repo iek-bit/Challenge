@@ -242,7 +242,7 @@ function createMouseCircleGame() {
     morphDifficulty: 0,
     driftDifficulty: 0,
     morphTime: 0,
-    morphDuration: randomRange(1.3, 1.9),
+    morphDuration: randomRange(0.7, 1.1),
     morphFrom: 0,
     morphTo: 1,
     sizePhase: 0,
@@ -282,7 +282,7 @@ function createMouseCircleGame() {
     state.driftDifficulty = 0;
     state.sizePhase = 0.25;
     state.morphTime = 0;
-    state.morphDuration = randomRange(1.3, 1.9);
+    state.morphDuration = randomRange(0.7, 1.1);
     state.cursorReady = false;
     state.started = false;
     state.driftTimer = 0;
@@ -381,8 +381,8 @@ function createMouseCircleGame() {
   }
 
   function updateMotion(dt) {
-    const baseSpeed = state.minDim * 0.11;
-    let speedScale = 1 + state.speedDifficulty * 0.24;
+    const baseSpeed = state.minDim * 0.16;
+    let speedScale = 1 + state.speedDifficulty * 0.3;
     const minSize = currentMinSize();
     const sizeSafety = clamp(minSize / (state.minDim * 0.1), 0.6, 1);
     speedScale *= sizeSafety;
@@ -425,19 +425,19 @@ function createMouseCircleGame() {
   }
 
   function updateMorph(dt) {
-    const durationScale = 1 - clamp(state.morphDifficulty * 0.035, 0, 0.45);
+    const durationScale = 1 - clamp(state.morphDifficulty * 0.05, 0, 0.55);
     const morphDuration = state.morphDuration * durationScale;
     state.morphTime += dt;
     if (state.morphTime >= morphDuration) {
       state.morphTime = 0;
       state.morphFrom = state.morphTo;
       state.morphTo = nextShapeIndex(state.morphFrom, shapes.length);
-      state.morphDuration = randomRange(1.3, 1.9);
+      state.morphDuration = randomRange(0.7, 1.1);
     }
   }
 
   function updateSizePulse(dt) {
-    const pulseDuration = pulseDurationBase * (1 - clamp(state.morphDifficulty * 0.02, 0, 0.3));
+    const pulseDuration = pulseDurationBase * (1 - clamp(state.morphDifficulty * 0.03, 0, 0.4));
     state.sizePhase = (state.sizePhase + dt / pulseDuration) % 1;
     const minSize = currentMinSize();
     const maxSize = currentMaxSize();
@@ -546,9 +546,9 @@ function createMouseCircleGame() {
   }
 
   function currentMaxSize() {
-    const baseMax = state.minDim * 0.22;
+    const baseMax = state.minDim * 0.16;
     const max = baseMax * (1 + state.sizeDifficulty * 0.03);
-    return Math.max(max, state.minDim * 0.14);
+    return Math.max(max, state.minDim * 0.11);
   }
 
   function currentMorphDuration() {
