@@ -161,8 +161,9 @@ function buildGameSections() {
       card.appendChild(title);
       card.appendChild(desc);
 
+      HoverPreviewController.init(card, gameId);
       card.addEventListener("mouseenter", () => {
-        HoverPreviewController.start(card, gameId);
+        HoverPreviewController.start(card);
       });
       card.addEventListener("mouseleave", () => {
         HoverPreviewController.stop(card);
@@ -310,35 +311,44 @@ const GamePreviewController = (() => {
 const HoverPreviewController = (() => {
   const previews = new WeakMap();
 
-  function start(card, gameId) {
-    if (previews.has(card)) return;
+  function init(card, gameId) {
     const game = gameRegistry[gameId];
     if (!game || !game.createPreview) return;
     const canvas = card.querySelector(".game-preview");
     if (!canvas) return;
     resizeCanvasToCard(canvas, card);
     const instance = game.createPreview(canvas);
-    instance.start();
+    if (instance.renderStatic) {
+      instance.renderStatic();
+    }
     previews.set(card, instance);
+  }
+
+  function start(card) {
+    const instance = previews.get(card);
+    if (!instance) return;
+    instance.start();
   }
 
   function stop(card) {
     const instance = previews.get(card);
     if (instance) {
       instance.stop();
-      previews.delete(card);
     }
   }
 
   function resizeCanvasToCard(canvas, card) {
     const rect = card.getBoundingClientRect();
-    canvas.width = rect.width;
-    canvas.height = rect.height;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
     canvas.style.width = `${rect.width}px`;
     canvas.style.height = `${rect.height}px`;
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  return { start, stop };
+  return { init, start, stop };
 })();
 
 function createMouseCircleGame() {
@@ -1291,11 +1301,16 @@ function createMouseCirclePreview(canvas = infoCanvas) {
     angle: 0,
   };
 
-  function start() {
+  function renderStatic() {
     preview.width = canvas.width;
     preview.height = canvas.height;
     preview.center.x = preview.width / 2;
     preview.center.y = preview.height / 2;
+    render();
+  }
+
+  function start() {
+    renderStatic();
     running = true;
     lastTime = performance.now();
     loop(lastTime);
@@ -1328,7 +1343,7 @@ function createMouseCirclePreview(canvas = infoCanvas) {
     ctx.stroke();
   }
 
-  return { start, stop };
+  return { start, stop, renderStatic };
 }
 
 function createPrecisionClicksPreview(canvas = infoCanvas) {
@@ -1338,7 +1353,7 @@ function createPrecisionClicksPreview(canvas = infoCanvas) {
   const ctx = canvas.getContext("2d");
   const targets = [];
 
-  function start() {
+  function renderStatic() {
     targets.length = 0;
     for (let i = 0; i < 6; i += 1) {
       targets.push({
@@ -1348,6 +1363,11 @@ function createPrecisionClicksPreview(canvas = infoCanvas) {
         decoy: i % 3 === 0,
       });
     }
+    render();
+  }
+
+  function start() {
+    renderStatic();
     running = true;
     lastTime = performance.now();
     loop(lastTime);
@@ -1388,7 +1408,7 @@ function createPrecisionClicksPreview(canvas = infoCanvas) {
     });
   }
 
-  return { start, stop };
+  return { start, stop, renderStatic };
 }
 
 function createTimingBarPreview(canvas = infoCanvas) {
@@ -1400,7 +1420,14 @@ function createTimingBarPreview(canvas = infoCanvas) {
   let zoneCenter = 0.6;
   const ctx = canvas.getContext("2d");
 
+  function renderStatic() {
+    sliderPos = 0.3;
+    zoneCenter = 0.6;
+    render();
+  }
+
   function start() {
+    renderStatic();
     running = true;
     lastTime = performance.now();
     loop(lastTime);
@@ -1449,7 +1476,7 @@ function createTimingBarPreview(canvas = infoCanvas) {
     ctx.fillRect(sliderX - 2, barY - 10, 4, 30);
   }
 
-  return { start, stop };
+  return { start, stop, renderStatic };
 }
 
 function createDodgeFieldGame() {
@@ -1847,7 +1874,7 @@ function createDodgeFieldPreview(canvas = infoCanvas) {
     cursor: { x: 60, y: 60 },
   };
 
-  function start() {
+  function renderStatic() {
     preview.width = canvas.width;
     preview.height = canvas.height;
     hazards.length = 0;
@@ -1895,6 +1922,11 @@ function createDodgeFieldPreview(canvas = infoCanvas) {
       laserAxis: "v",
       stationary: true,
     });
+    render();
+  }
+
+  function start() {
+    renderStatic();
     running = true;
     lastTime = performance.now();
     loop(lastTime);
@@ -1980,7 +2012,7 @@ function createDodgeFieldPreview(canvas = infoCanvas) {
     ctx.stroke();
   }
 
-  return { start, stop };
+  return { start, stop, renderStatic };
 }
 
 function polygonRadius(angle, sides) {
