@@ -44,6 +44,15 @@ const gameRegistry = {
     createPreview: () => createDodgeFieldPreview(),
     infoText: "Dodge waves of hazards as they speed up and begin to curve.",
   },
+  "racing": {
+    title: "Racing",
+    description: "Two modes: endless highway or race vs bots.",
+    tags: ["Speed", "Control"],
+    icon: "path",
+    createGame: () => createRacingGame(),
+    createPreview: () => createRacingPreview(),
+    infoText: "Minimalist line-art racing with momentum turning.",
+  },
 };
 
 const startButton = document.getElementById("startButton");
@@ -66,6 +75,9 @@ const infoTitle = document.getElementById("infoTitle");
 const infoText = document.getElementById("infoText");
 const infoCanvas = document.getElementById("infoCanvas");
 const heartsReadout = document.getElementById("heartsReadout");
+const raceModeSelect = document.getElementById("raceModeSelect");
+const raceEndlessBtn = document.getElementById("raceEndlessBtn");
+const raceVsBtn = document.getElementById("raceVsBtn");
 
 document.body.classList.add("home-active");
 
@@ -157,6 +169,10 @@ function buildGameSections() {
 
       card.innerHTML = iconFactory[game.icon]?.() ?? "";
       card.appendChild(previewCanvas);
+      const icon = card.querySelector(".game-icon");
+      if (icon) {
+        icon.remove();
+      }
       card.appendChild(chip);
       card.appendChild(title);
       card.appendChild(desc);
@@ -201,6 +217,14 @@ function setupNavigation() {
   infoClose.addEventListener("click", () => {
     GamePreviewController.close();
   });
+
+  raceEndlessBtn.addEventListener("click", () => {
+    GameController.startRacingMode("endless");
+  });
+
+  raceVsBtn.addEventListener("click", () => {
+    GameController.startRacingMode("race");
+  });
 }
 
 const GameController = (() => {
@@ -232,8 +256,14 @@ const GameController = (() => {
     gameOver.classList.add("is-hidden");
     heartsReadout.classList.add("is-hidden");
     document.body.classList.add("game-active");
-    currentGame = gameConfig.createGame();
-    currentGame.start();
+    if (gameId === "racing") {
+      raceModeSelect.classList.remove("is-hidden");
+      currentGame = gameConfig.createGame();
+    } else {
+      raceModeSelect.classList.add("is-hidden");
+      currentGame = gameConfig.createGame();
+      currentGame.start();
+    }
   }
 
   function stop() {
@@ -244,6 +274,7 @@ const GameController = (() => {
     document.body.classList.remove("game-active");
     showView(selectScreen);
     gameOver.classList.add("is-hidden");
+    raceModeSelect.classList.add("is-hidden");
   }
 
   function gameOverScreen(scoreText) {
@@ -257,7 +288,13 @@ const GameController = (() => {
     heartsReadout.classList.add("is-hidden");
   }
 
-  return { start, stop, gameOverScreen };
+  function startRacingMode(mode) {
+    if (!currentGame || !currentGame.startMode) return;
+    raceModeSelect.classList.add("is-hidden");
+    currentGame.startMode(mode);
+  }
+
+  return { start, stop, gameOverScreen, startRacingMode };
 })();
 
 function setupGameCards() {
@@ -2024,6 +2061,326 @@ function createDodgeFieldPreview(canvas = infoCanvas) {
     ctx.arc(preview.cursor.x, preview.cursor.y, 5, 0, Math.PI * 2);
     ctx.strokeStyle = "rgba(138, 182, 166, 0.9)";
     ctx.stroke();
+  }
+
+  return { start, stop, renderStatic };
+}
+
+function createRacingGame() {
+  let running = false;
+  let animationId = null;
+  let lastTime = 0;
+  let mode = null;
+  let elapsed = 0;
+  let score = 0;
+  let lives = 3;
+  let distance = 0;
+  let bots = [];
+  let track = null;
+  let laps = 2;
+  let playerLap = 0;
+
+  const ctx = gameCanvas.getContext("2d");
+  const keys = new Set();
+
+  const state = {
+    width: 0,
+    height: 0,
+    minDim: 0,
+    bgColor: "#060708",
+    player: createCar(),
+  };
+
+  function createCar() {
+    return {
+      x: 0,
+      y: 0,
+      angle: -Math.PI / 2,
+      vx: 0,
+      vy: 0,
+      speed: 0,
+      angular: 0,
+      width: 18,
+      height: 30,
+    };
+  }
+
+  function start() {
+    running = true;
+    lastTime = performance.now();
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+  }
+
+  function startMode(selected) {
+    mode = selected;
+    resetState();
+    lastTime = performance.now();
+    loop(lastTime);
+  }
+
+  function stop() {
+    running = false;
+    if (animationId) cancelAnimationFrame(animationId);
+    window.removeEventListener("keydown", handleKeyDown);
+    window.removeEventListener("keyup", handleKeyUp);
+  }
+
+  function resetState() {
+    resize();
+    elapsed = 0;
+    score = 0;
+    distance = 0;
+    lives = 3;
+    playerLap = 0;
+    state.player = createCar();
+    state.player.x = state.width / 2;
+    state.player.y = state.height * 0.75;
+    state.player.angle = -Math.PI / 2;
+    bots = createBots();
+    track = mode === "race" ? createTrack() : null;
+    heartsReadout.classList.toggle("is-hidden", mode !== "endless");
+    missedReadout.textContent = mode === "race" ? "Place 1/6" : "";
+  }
+
+  function resize() {
+    const rect = gameScreen.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    gameCanvas.width = rect.width * dpr;
+    gameCanvas.height = rect.height * dpr;
+    gameCanvas.style.width = `${rect.width}px`;
+    gameCanvas.style.height = `${rect.height}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    state.width = rect.width;
+    state.height = rect.height;
+    state.minDim = Math.min(rect.width, rect.height);
+  }
+
+  function handleKeyDown(event) {
+    keys.add(event.key.toLowerCase());
+  }
+
+  function handleKeyUp(event) {
+    keys.delete(event.key.toLowerCase());
+  }
+
+  function loop(now) {
+    if (!running || !mode) return;
+    const dt = Math.min((now - lastTime) / 1000, 0.033);
+    lastTime = now;
+    elapsed += dt;
+
+    updatePlayer(dt);
+    if (mode === "endless") {
+      updateEndless(dt);
+    } else {
+      updateRace(dt);
+    }
+
+    updateHud();
+    render();
+
+    animationId = requestAnimationFrame(loop);
+  }
+
+  function updatePlayer(dt) {
+    const player = state.player;
+    const accel = keys.has("w") || keys.has("arrowup") ? 240 : keys.has("s") || keys.has("arrowdown") ? -180 : 0;
+    const turn = keys.has("a") || keys.has("arrowleft") ? -1 : keys.has("d") || keys.has("arrowright") ? 1 : 0;
+
+    player.speed += accel * dt;
+    player.speed *= 0.98;
+    const speedFactor = clamp(Math.abs(player.speed) / 260, 0, 1);
+    player.angular = turn * (2.2 - speedFactor * 1.1);
+    player.angle += player.angular * dt;
+
+    const vx = Math.cos(player.angle) * player.speed;
+    const vy = Math.sin(player.angle) * player.speed;
+    player.vx = lerp(player.vx, vx, 0.18);
+    player.vy = lerp(player.vy, vy, 0.18);
+
+    player.x += player.vx * dt;
+    player.y += player.vy * dt;
+  }
+
+  function updateEndless(dt) {
+    const roadWidth = state.width * 0.6;
+    const minX = (state.width - roadWidth) / 2;
+    const maxX = minX + roadWidth;
+    if (state.player.x < minX || state.player.x > maxX) {
+      state.player.x = clamp(state.player.x, minX, maxX);
+      state.player.speed *= 0.6;
+      lives -= 1;
+      if (lives <= 0) {
+        GameController.gameOverScreen(Math.floor(score).toString().padStart(6, "0"));
+      }
+    }
+    distance += Math.max(0, state.player.speed) * dt;
+    score = distance * 0.05 + Math.max(0, state.player.speed) * 0.2;
+  }
+
+  function updateRace(dt) {
+    bots.forEach((bot) => {
+      bot.angle += bot.turnRate * dt;
+      bot.x += Math.cos(bot.angle) * bot.speed * dt;
+      bot.y += Math.sin(bot.angle) * bot.speed * dt;
+    });
+    // Simple lap progress: loop around center
+    const dx = state.player.x - state.width / 2;
+    const dy = state.player.y - state.height / 2;
+    const angle = Math.atan2(dy, dx);
+    if (angle > Math.PI * 0.9 && playerLap === 0) {
+      playerLap = 1;
+    } else if (angle < -Math.PI * 0.9 && playerLap === 1) {
+      playerLap = 2;
+      GameController.gameOverScreen("Finished");
+    }
+  }
+
+  function updateHud() {
+    scoreReadout.textContent = Math.floor(score).toString().padStart(6, "0");
+    if (mode === "endless") {
+      heartsReadout.textContent = "❤".repeat(lives);
+      missedReadout.textContent = "";
+    } else {
+      heartsReadout.classList.add("is-hidden");
+      missedReadout.textContent = "Place 1/6";
+    }
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, state.width, state.height);
+    ctx.fillStyle = state.bgColor;
+    ctx.fillRect(0, 0, state.width, state.height);
+    ctx.strokeStyle = "rgba(231, 237, 244, 0.9)";
+    ctx.lineWidth = 2;
+
+    if (mode === "endless") {
+      const roadWidth = state.width * 0.6;
+      const left = (state.width - roadWidth) / 2;
+      const right = left + roadWidth;
+      ctx.beginPath();
+      ctx.moveTo(left, 0);
+      ctx.lineTo(left, state.height);
+      ctx.moveTo(right, 0);
+      ctx.lineTo(right, state.height);
+      ctx.stroke();
+      for (let y = 0; y < state.height; y += 40) {
+        ctx.beginPath();
+        ctx.moveTo(state.width / 2, y);
+        ctx.lineTo(state.width / 2, y + 20);
+        ctx.stroke();
+      }
+    } else if (track) {
+      ctx.beginPath();
+      track.forEach((p, idx) => {
+        if (idx === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      ctx.closePath();
+      ctx.stroke();
+    }
+
+    renderCar(state.player);
+    bots.forEach(renderCar);
+  }
+
+  function renderCar(car) {
+    ctx.save();
+    ctx.translate(car.x, car.y);
+    ctx.rotate(car.angle + Math.PI / 2);
+    ctx.beginPath();
+    ctx.rect(-car.width / 2, -car.height / 2, car.width, car.height);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function createBots() {
+    if (mode !== "race") return [];
+    const list = [];
+    for (let i = 0; i < 5; i += 1) {
+      const bot = createCar();
+      bot.x = state.width / 2 + Math.cos((i / 5) * Math.PI * 2) * 120;
+      bot.y = state.height / 2 + Math.sin((i / 5) * Math.PI * 2) * 120;
+      bot.speed = 140 + i * 10;
+      bot.turnRate = 0.7 + i * 0.05;
+      list.push(bot);
+    }
+    return list;
+  }
+
+  function createTrack() {
+    const points = [];
+    const cx = state.width / 2;
+    const cy = state.height / 2;
+    const radius = state.minDim * 0.25;
+    for (let i = 0; i < 12; i += 1) {
+      const angle = (i / 12) * Math.PI * 2;
+      const jitter = randomRange(-30, 30);
+      points.push({
+        x: cx + Math.cos(angle) * (radius + jitter),
+        y: cy + Math.sin(angle) * (radius + jitter),
+      });
+    }
+    return points;
+  }
+
+  return { start, stop, startMode };
+}
+
+function createRacingPreview(canvas = infoCanvas) {
+  let running = false;
+  let animationId = null;
+  let lastTime = 0;
+  let cars = [];
+  const ctx = canvas.getContext("2d");
+
+  function start() {
+    cars = [
+      { x: canvas.width * 0.3, y: canvas.height * 0.5, angle: 0 },
+      { x: canvas.width * 0.7, y: canvas.height * 0.5, angle: Math.PI },
+    ];
+    running = true;
+    lastTime = performance.now();
+    loop(lastTime);
+  }
+
+  function stop() {
+    running = false;
+    if (animationId) cancelAnimationFrame(animationId);
+  }
+
+  function loop(now) {
+    if (!running) return;
+    const dt = Math.min((now - lastTime) / 1000, 0.033);
+    lastTime = now;
+    cars.forEach((car, idx) => {
+      car.angle += (idx % 2 === 0 ? 1 : -1) * dt;
+      car.x += Math.cos(car.angle) * 30 * dt;
+      car.y += Math.sin(car.angle) * 30 * dt;
+    });
+    render();
+    animationId = requestAnimationFrame(loop);
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#060708";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "rgba(231, 237, 244, 0.9)";
+    cars.forEach((car) => {
+      ctx.save();
+      ctx.translate(car.x, car.y);
+      ctx.rotate(car.angle + Math.PI / 2);
+      ctx.beginPath();
+      ctx.rect(-6, -10, 12, 20);
+      ctx.stroke();
+      ctx.restore();
+    });
+  }
+
+  function renderStatic() {
+    render();
   }
 
   return { start, stop, renderStatic };
