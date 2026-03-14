@@ -2241,6 +2241,16 @@ function createRacingGame() {
     let turn = keys.has("a") || keys.has("arrowleft") ? -1 : keys.has("d") || keys.has("arrowright") ? 1 : 0;
     if (mode === "endless") {
       accel = 0;
+      const maxAngle = 0.55;
+      const turnRate = 2.2;
+      player.angle += turn * turnRate * dt;
+      player.angle = clamp(player.angle, -maxAngle, maxAngle);
+      const lateralSpeed = 180;
+      player.x += Math.sin(player.angle) * lateralSpeed * dt;
+      player.y = state.height * 0.78;
+      player.vx = 0;
+      player.vy = 0;
+      return;
     }
     if (mode === "race" && !raceStarted) {
       if (accel > 0) {
@@ -2273,9 +2283,8 @@ function createRacingGame() {
   function updateEndless(dt) {
     const difficulty = clamp(elapsed / 22, 0, 6);
     const maxSpeed = 240 + difficulty * 80;
-    const cruise = lerp(160, maxSpeed * 0.92, difficulty / 6);
-    state.player.speed = lerp(state.player.speed, cruise, 0.06);
-    state.player.speed = clamp(state.player.speed, 60, maxSpeed);
+    const cruise = 220;
+    state.player.speed = cruise;
 
     const minX = state.roadLeft + 12;
     const maxX = state.roadRight - 12;
