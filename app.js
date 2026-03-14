@@ -1,6 +1,14 @@
 const TAGS = ["Skill", "Speed", "Control"];
 
 const gameRegistry = {
+  "racing-mode": {
+    title: "Racing Mode",
+    description: "Survive an endless procedurally generated track.",
+    tags: ["Speed", "Control"],
+    icon: "racing",
+    createGame: () => createRacingModeGame(),
+    infoText: "Steer left and right to stay on the track as speed builds.",
+  },
   "mouse-circle": {
     title: "Mouse in Circle",
     description: "Keep the cursor inside a drifting, shrinking circle.",
@@ -107,6 +115,16 @@ const iconFactory = {
       <line x1="28" y1="36" x2="92" y2="36"></line>
       <line x1="28" y1="60" x2="92" y2="60"></line>
       <line x1="28" y1="84" x2="92" y2="84"></line>
+    </svg>
+  `,
+  racing: () => `
+    <svg class="game-icon" viewBox="0 0 120 120" fill="none" stroke-width="2">
+      <path d="M18 70 L34 48 L86 48 L102 70"></path>
+      <path d="M34 48 L42 30 L78 30 L86 48"></path>
+      <line x1="26" y1="70" x2="18" y2="80"></line>
+      <line x1="94" y1="70" x2="102" y2="80"></line>
+      <circle cx="34" cy="78" r="8"></circle>
+      <circle cx="86" cy="78" r="8"></circle>
     </svg>
   `,
 };
@@ -1856,6 +1874,534 @@ function createDodgeFieldGame() {
   return { start, stop };
 }
 
+function createRacingModeGame() {
+  let running = false;
+  let animationId = null;
+  let lastTime = 0;
+
+  const ctx = gameCanvas.getContext("2d");
+  const input = { left: false, right: false };
+  const trail = [];
+  const renderCache = { left: [], right: [], center: [], points: [] };
+
+  const state = {
+    width: 0,
+    height: 0,
+    mode: "START",
+    elapsed: 0,
+  };
+
+  const player = {
+    x: 0,
+    y: 0,
+    heading: -Math.PI / 2,
+    baseSpeed: 260,
+    speed: 260,
+    turnRate: 2.4,
+    distance: 0,
+  };
+
+  const track = {
+    width: 120,
+    minLen: 150,
+    maxLen: 250,
+    step: 24,
+    segments: [],
+    totalLength: 0,
+    lastPos: { x: 0, y: 0 },
+    lastHeading: -Math.PI / 2,
+    currentTurn: 0,
+    desiredTurn: 0,
+    turnQueue: [],
+  };
+
+  let startOverlay = null;
+  let gameOverOverlay = null;
+  let startRunButton = null;
+  let restartButton = null;
+  let gameOverScore = null;
+
+  function resize() {
+    const rect = gameScreen.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    gameCanvas.width = rect.width * dpr;
+    gameCanvas.height = rect.height * dpr;
+    gameCanvas.style.width = `${rect.width}px`;
+    gameCanvas.style.height = `${rect.height}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    state.width = rect.width;
+    state.height = rect.height;
+  }
+
+  function start() {
+    missedReadout.classList.add("is-collapsed");
+    heartsReadout.classList.add("is-hidden");
+    setupOverlays();
+    resize();
+    resetGame();
+    window.addEventListener("resize", resize);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    render();
+  }
+
+  function stop() {
+    running = false;
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+    }
+    window.removeEventListener("resize", resize);
+    window.removeEventListener("keydown", handleKeyDown);
+    window.removeEventListener("keyup", handleKeyUp);
+    teardownOverlays();
+  }
+
+  function setupOverlays() {
+    if (!startOverlay) {
+      startOverlay = document.createElement("div");
+      startOverlay.className = "racing-overlay";
+      startOverlay.innerHTML = `
+        <div class="racing-card">
+          <div class="racing-title">Racing Mode</div>
+          <button class="start-button" type="button">Start Run</button>
+        </div>
+      `;
+      startRunButton = startOverlay.querySelector("button");
+      startRunButton.addEventListener("click", handleStartRun);
+      gameScreen.appendChild(startOverlay);
+    }
+
+    if (!gameOverOverlay) {
+      gameOverOverlay = document.createElement("div");
+      gameOverOverlay.className = "racing-overlay is-hidden";
+      gameOverOverlay.innerHTML = `
+        <div class="racing-card">
+          <div class="racing-title">Game Over</div>
+          <div class="racing-score">Score: 0000000</div>
+          <button class="start-button" type="button">Restart</button>
+        </div>
+      `;
+      gameOverScore = gameOverOverlay.querySelector(".racing-score");
+      restartButton = gameOverOverlay.querySelector("button");
+      restartButton.addEventListener("click", handleRestart);
+      gameScreen.appendChild(gameOverOverlay);
+    }
+  }
+
+  function teardownOverlays() {
+    if (startRunButton) {
+      startRunButton.removeEventListener("click", handleStartRun);
+    }
+    if (restartButton) {
+      restartButton.removeEventListener("click", handleRestart);
+    }
+    if (startOverlay) {
+      startOverlay.remove();
+    }
+    if (gameOverOverlay) {
+      gameOverOverlay.remove();
+    }
+    startOverlay = null;
+    gameOverOverlay = null;
+    startRunButton = null;
+    restartButton = null;
+    gameOverScore = null;
+  }
+
+  function handleStartRun() {
+    startRun();
+  }
+
+  function handleRestart() {
+    resetGame();
+    startRun();
+  }
+
+  function handleKeyDown(event) {
+    if (event.code === "ArrowLeft" || event.code === "KeyA") {
+      input.left = true;
+      event.preventDefault();
+    }
+    if (event.code === "ArrowRight" || event.code === "KeyD") {
+      input.right = true;
+      event.preventDefault();
+    }
+  }
+
+  function handleKeyUp(event) {
+    if (event.code === "ArrowLeft" || event.code === "KeyA") {
+      input.left = false;
+      event.preventDefault();
+    }
+    if (event.code === "ArrowRight" || event.code === "KeyD") {
+      input.right = false;
+      event.preventDefault();
+    }
+  }
+
+  function resetGame() {
+    state.mode = "START";
+    state.elapsed = 0;
+    player.x = 0;
+    player.y = 0;
+    player.heading = -Math.PI / 2;
+    player.speed = player.baseSpeed;
+    player.distance = 0;
+    trail.length = 0;
+
+    track.segments.length = 0;
+    track.totalLength = 0;
+    track.lastPos = { x: 0, y: 0 };
+    track.lastHeading = -Math.PI / 2;
+    track.currentTurn = 0;
+    track.desiredTurn = 0;
+    track.turnQueue.length = 0;
+
+    ensureSegments();
+    if (startOverlay) {
+      startOverlay.classList.remove("is-hidden");
+    }
+    if (gameOverOverlay) {
+      gameOverOverlay.classList.add("is-hidden");
+    }
+    updateHud();
+  }
+
+  function startRun() {
+    if (state.mode === "RUNNING") return;
+    state.mode = "RUNNING";
+    if (startOverlay) {
+      startOverlay.classList.add("is-hidden");
+    }
+    if (gameOverOverlay) {
+      gameOverOverlay.classList.add("is-hidden");
+    }
+    running = true;
+    lastTime = performance.now();
+    loop(lastTime);
+  }
+
+  function endRun() {
+    state.mode = "GAME_OVER";
+    running = false;
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+    }
+    const scoreText = formatScore(player.distance);
+    if (gameOverScore) {
+      gameOverScore.textContent = `Score: ${scoreText}`;
+    }
+    if (gameOverOverlay) {
+      gameOverOverlay.classList.remove("is-hidden");
+    }
+  }
+
+  function loop(now) {
+    if (!running) return;
+    const dt = Math.min((now - lastTime) / 1000, 0.033);
+    lastTime = now;
+
+    update(dt);
+    render();
+
+    if (running) {
+      animationId = requestAnimationFrame(loop);
+    }
+  }
+
+  function update(dt) {
+    state.elapsed += dt;
+    const speedBoost = Math.min(state.elapsed * 6, 180);
+    player.speed = player.baseSpeed + speedBoost;
+
+    const steering = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    player.heading += steering * player.turnRate * dt;
+    player.x += Math.cos(player.heading) * player.speed * dt;
+    player.y += Math.sin(player.heading) * player.speed * dt;
+    player.distance += player.speed * dt;
+
+    trail.push({ x: player.x, y: player.y, heading: player.heading });
+    if (trail.length > 18) {
+      trail.shift();
+    }
+
+    ensureSegments();
+    const distanceFromCenter = distanceToCenterline(player.x, player.y);
+    if (distanceFromCenter > track.width / 2) {
+      endRun();
+      return;
+    }
+
+    updateHud();
+  }
+
+  function ensureSegments() {
+    const aheadDistance = 2600;
+    while (track.totalLength < player.distance + aheadDistance) {
+      addSegment();
+    }
+    const pruneBefore = player.distance - 500;
+    while (track.segments.length && track.segments[0].endS < pruneBefore) {
+      track.segments.shift();
+    }
+  }
+
+  function addSegment() {
+    const length = randomRange(track.minLen, track.maxLen);
+    chooseTurnTarget();
+    track.currentTurn += (track.desiredTurn - track.currentTurn) * 0.45;
+    track.currentTurn = clamp(track.currentTurn, -0.32, 0.32);
+
+    const deltaHeading = track.currentTurn;
+    const steps = Math.max(6, Math.ceil(length / track.step));
+    let x = track.lastPos.x;
+    let y = track.lastPos.y;
+    const heading = track.lastHeading;
+    let s = track.totalLength;
+    const points = [{ x, y, heading, s }];
+
+    for (let i = 1; i <= steps; i += 1) {
+      const t = i / steps;
+      const stepHeading = heading + deltaHeading * t;
+      const stepLen = length / steps;
+      x += Math.cos(stepHeading) * stepLen;
+      y += Math.sin(stepHeading) * stepLen;
+      s += stepLen;
+      points.push({ x, y, heading: stepHeading, s });
+    }
+
+    track.lastPos = { x, y };
+    track.lastHeading = heading + deltaHeading;
+    track.totalLength = s;
+
+    track.segments.push({
+      points,
+      startS: points[0].s,
+      endS: s,
+    });
+  }
+
+  function chooseTurnTarget() {
+    if (track.turnQueue.length) {
+      track.desiredTurn = track.turnQueue.shift();
+      return;
+    }
+
+    const roll = Math.random();
+    if (roll < 0.22) {
+      track.desiredTurn = 0;
+    } else if (roll < 0.6) {
+      track.desiredTurn = randomSignedRange(0.04, 0.12);
+    } else if (roll < 0.85) {
+      track.desiredTurn = randomSignedRange(0.12, 0.2);
+    } else {
+      const sign = Math.random() < 0.5 ? -1 : 1;
+      track.turnQueue.push(sign * randomRange(0.12, 0.18));
+      track.turnQueue.push(-sign * randomRange(0.12, 0.18));
+      track.turnQueue.push(0);
+      track.desiredTurn = track.turnQueue.shift();
+    }
+  }
+
+  function updateHud() {
+    const scoreText = formatScore(player.distance);
+    scoreReadout.textContent = `Score: ${scoreText}`;
+    missedReadout.textContent = "";
+  }
+
+  function formatScore(distance) {
+    return Math.floor(distance).toString().padStart(7, "0");
+  }
+
+  function collectRenderPoints() {
+    const minS = player.distance - 400;
+    const maxS = player.distance + 2000;
+    renderCache.points.length = 0;
+    track.segments.forEach((segment, index) => {
+      const startIndex = index === 0 ? 0 : 1;
+      for (let i = startIndex; i < segment.points.length; i += 1) {
+        const point = segment.points[i];
+        if (point.s < minS) continue;
+        if (point.s > maxS) break;
+        renderCache.points.push(point);
+      }
+    });
+    return renderCache.points;
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, state.width, state.height);
+    ctx.fillStyle = "#0b0b0b";
+    ctx.fillRect(0, 0, state.width, state.height);
+
+    const centerX = state.width / 2;
+    const centerY = state.height / 2;
+    const points = collectRenderPoints();
+    if (points.length < 2) return;
+
+    buildRenderPaths(points, centerX, centerY);
+    drawTrack();
+    drawCenterAccent();
+    drawTrail(centerX, centerY);
+    drawCar(centerX, centerY);
+  }
+
+  function buildRenderPaths(points, centerX, centerY) {
+    renderCache.left.length = 0;
+    renderCache.right.length = 0;
+    renderCache.center.length = 0;
+    const half = track.width / 2;
+
+    points.forEach((point) => {
+      const dx = point.x - player.x;
+      const dy = point.y - player.y;
+      const screenX = centerX + dx;
+      const screenY = centerY + dy;
+      const nx = -Math.sin(point.heading);
+      const ny = Math.cos(point.heading);
+      renderCache.center.push(screenX, screenY);
+      renderCache.left.push(screenX + nx * half, screenY + ny * half);
+      renderCache.right.push(screenX - nx * half, screenY - ny * half);
+    });
+  }
+
+  function drawTrack() {
+    if (renderCache.left.length < 4) return;
+    ctx.beginPath();
+    ctx.moveTo(renderCache.left[0], renderCache.left[1]);
+    for (let i = 2; i < renderCache.left.length; i += 2) {
+      ctx.lineTo(renderCache.left[i], renderCache.left[i + 1]);
+    }
+    for (let i = renderCache.right.length - 2; i >= 0; i -= 2) {
+      ctx.lineTo(renderCache.right[i], renderCache.right[i + 1]);
+    }
+    ctx.closePath();
+    ctx.fillStyle = "#222";
+    ctx.fill();
+
+    ctx.save();
+    ctx.strokeStyle = "rgba(0, 255, 200, 0.25)";
+    ctx.lineWidth = 8;
+    ctx.shadowColor = "rgba(0, 255, 200, 0.35)";
+    ctx.shadowBlur = 12;
+    drawLine(renderCache.left);
+    drawLine(renderCache.right);
+    ctx.restore();
+
+    ctx.strokeStyle = "#f5f5f5";
+    ctx.lineWidth = 2;
+    drawLine(renderCache.left);
+    drawLine(renderCache.right);
+  }
+
+  function drawCenterAccent() {
+    ctx.save();
+    ctx.strokeStyle = "rgba(0, 255, 210, 0.35)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([16, 18]);
+    drawLine(renderCache.center);
+    ctx.restore();
+  }
+
+  function drawLine(path) {
+    if (path.length < 4) return;
+    ctx.beginPath();
+    ctx.moveTo(path[0], path[1]);
+    for (let i = 2; i < path.length; i += 2) {
+      ctx.lineTo(path[i], path[i + 1]);
+    }
+    ctx.stroke();
+  }
+
+  function drawTrail(centerX, centerY) {
+    if (trail.length < 2) return;
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    for (let i = 0; i < trail.length; i += 1) {
+      const t = i / trail.length;
+      const alpha = t * 0.45;
+      const point = trail[i];
+      const sx = centerX + (point.x - player.x);
+      const sy = centerY + (point.y - player.y);
+      const length = 12;
+      const dx = Math.cos(point.heading) * -length;
+      const dy = Math.sin(point.heading) * -length;
+      ctx.strokeStyle = `rgba(21, 243, 216, ${alpha})`;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + dx, sy + dy);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawCar(centerX, centerY) {
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.rotate(player.heading + Math.PI / 2);
+    ctx.strokeStyle = "#f5f5f5";
+    ctx.lineWidth = 2;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+
+    ctx.beginPath();
+    ctx.moveTo(0, -22);
+    ctx.lineTo(10, -8);
+    ctx.lineTo(12, 10);
+    ctx.lineTo(6, 22);
+    ctx.lineTo(-6, 22);
+    ctx.lineTo(-12, 10);
+    ctx.lineTo(-10, -8);
+    ctx.closePath();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(-5, -6);
+    ctx.lineTo(5, -6);
+    ctx.lineTo(7, 6);
+    ctx.lineTo(-7, 6);
+    ctx.closePath();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(-16, -18);
+    ctx.lineTo(16, -18);
+    ctx.moveTo(-18, 18);
+    ctx.lineTo(18, 18);
+    ctx.stroke();
+
+    ctx.strokeRect(-18, -6, 5, 10);
+    ctx.strokeRect(13, -6, 5, 10);
+    ctx.strokeRect(-18, 8, 5, 10);
+    ctx.strokeRect(13, 8, 5, 10);
+
+    ctx.restore();
+  }
+
+  function distanceToCenterline(px, py) {
+    let closest = Infinity;
+    const minS = player.distance - 500;
+    const maxS = player.distance + 900;
+    track.segments.forEach((segment) => {
+      const points = segment.points;
+      for (let i = 0; i < points.length - 1; i += 1) {
+        const a = points[i];
+        const b = points[i + 1];
+        if (b.s < minS) continue;
+        if (a.s > maxS) break;
+        const distance = distancePointToSegment(px, py, a.x, a.y, b.x, b.y);
+        if (distance < closest) {
+          closest = distance;
+        }
+      }
+    });
+    return closest;
+  }
+
+  return { start, stop };
+}
+
 function laserEndpoints(hazard) {
   if (hazard.laserAxis === "v") {
     return {
@@ -2084,6 +2630,23 @@ function randomRange(min, max) {
 
 function lerp(a, b, t) {
   return a + (b - a) * t;
+}
+
+function randomSignedRange(min, max) {
+  const sign = Math.random() < 0.5 ? -1 : 1;
+  return sign * randomRange(min, max);
+}
+
+function distancePointToSegment(px, py, ax, ay, bx, by) {
+  const vx = bx - ax;
+  const vy = by - ay;
+  const wx = px - ax;
+  const wy = py - ay;
+  const len2 = vx * vx + vy * vy || 1;
+  const t = clamp((wx * vx + wy * vy) / len2, 0, 1);
+  const cx = ax + t * vx;
+  const cy = ay + t * vy;
+  return Math.hypot(px - cx, py - cy);
 }
 
 function mixColor(a, b, t) {

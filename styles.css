@@ -203,6 +203,41 @@ body.home-active .app-shell {
   z-index: 5;
 }
 
+.racing-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(6, 7, 8, 0.78);
+  z-index: 4;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.racing-card {
+  background: rgba(10, 12, 16, 0.85);
+  border: 1px solid rgba(226, 230, 234, 0.12);
+  padding: 32px 36px;
+  border-radius: var(--radius);
+  text-align: center;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  display: grid;
+  gap: 16px;
+  min-width: min(320px, 85vw);
+}
+
+.racing-title {
+  font-family: "Oxanium", "Chakra Petch", sans-serif;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-size: 22px;
+}
+
+.racing-score {
+  font-size: 16px;
+  color: var(--text-muted);
+  letter-spacing: 0.12em;
+}
+
 .game-over-card {
   background: rgba(10, 12, 16, 0.85);
   border: 1px solid rgba(226, 230, 234, 0.12);
