@@ -449,22 +449,7 @@ function createMouseCircleGame() {
   }
 
   function updateBackground() {
-    const difficultyFactor = totalDifficulty * 0.08 + elapsed * 0.01;
-    const palette = [
-      "#0b0e13",
-      "#2b323c",
-      "#7a733b",
-      "#824f2e",
-      "#6b2f2f",
-      "#e6e4d6",
-      "#353b45",
-      "#0b0e13",
-    ];
-    const phase = (difficultyFactor % 1 + 1) % 1;
-    const step = phase * (palette.length - 1);
-    const index = Math.floor(step);
-    const t = step - index;
-    state.bgColor = mixColor(palette[index], palette[index + 1], t);
+    state.bgColor = "#060708";
   }
 
   function updateScore() {
@@ -602,17 +587,6 @@ function createPrecisionClicksGame() {
     life: 0,
     decoy: 0,
   };
-
-  const palette = [
-    "#0b0e13",
-    "#2b323c",
-    "#7a733b",
-    "#824f2e",
-    "#6b2f2f",
-    "#e6e4d6",
-    "#353b45",
-    "#0b0e13",
-  ];
 
   const state = {
     width: 0,
@@ -833,12 +807,7 @@ function createPrecisionClicksGame() {
   }
 
   function updateBackground() {
-    const difficultyFactor = totalDifficulty * 0.08 + gameTime * 0.01;
-    const phase = (difficultyFactor % 1 + 1) % 1;
-    const step = phase * (palette.length - 1);
-    const index = Math.floor(step);
-    const t = step - index;
-    state.bgColor = mixColor(palette[index], palette[index + 1], t);
+    state.bgColor = "#060708";
   }
 
   function updateHud() {
