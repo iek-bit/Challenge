@@ -237,20 +237,6 @@ body::after {
   pointer-events: auto;
 }
 
-.progress-track {
-  height: 10px;
-  background: rgba(226, 230, 234, 0.06);
-  border-radius: 999px;
-  overflow: hidden;
-  border: 1px solid rgba(226, 230, 234, 0.12);
-}
-
-.progress-fill {
-  height: 100%;
-  width: 0%;
-  background: rgba(138, 182, 166, 0.7);
-  transition: width 0.1s linear;
-}
 
 .score-readout {
   font-size: 18px;

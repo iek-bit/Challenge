@@ -43,7 +43,6 @@ const homeScreen = document.querySelector('[data-view="home"]');
 const selectScreen = document.querySelector('[data-view="select"]');
 const gameScreen = document.querySelector('[data-view="game"]');
 const gameCanvas = document.getElementById("gameCanvas");
-const progressFill = document.getElementById("difficultyProgress");
 const scoreReadout = document.getElementById("scoreReadout");
 const missedReadout = document.getElementById("missedReadout");
 const gameOver = document.getElementById("gameOver");
@@ -236,11 +235,9 @@ function createMouseCircleGame() {
   let animationId = null;
   let lastTime = 0;
   let elapsed = 0;
-  let stepTimer = 0;
   let timeLeft = 30;
   let totalDifficulty = 0;
 
-  const stepDuration = 5;
   const baseTime = 30;
   const pulseDurationBase = 4;
   const buffer = 5;
@@ -299,7 +296,6 @@ function createMouseCircleGame() {
   function start() {
     missedReadout.classList.add("is-collapsed");
     elapsed = 0;
-    stepTimer = 0;
     totalDifficulty = 0;
     state.speedDifficulty = 0;
     state.sizeDifficulty = 0;
@@ -361,7 +357,6 @@ function createMouseCircleGame() {
       if (isCursorInsideShape(0.55)) {
         state.started = true;
         elapsed = 0;
-        stepTimer = 0;
         totalDifficulty = 0;
         const minSize = currentMinSize();
         const maxSize = currentMaxSize();
@@ -375,12 +370,7 @@ function createMouseCircleGame() {
       updateMorph(dt);
       updateSizePulse(dt);
       elapsed += dt;
-      stepTimer += dt;
-
-      if (stepTimer >= stepDuration) {
-        stepTimer -= stepDuration;
-        applyDifficultyStep();
-      }
+      updateContinuousDifficulty(dt);
 
       checkCollision();
       const drainRate = 1 + clamp(totalDifficulty * 0.02, 0, 0.5);
@@ -401,16 +391,13 @@ function createMouseCircleGame() {
     }
   }
 
-  function applyDifficultyStep() {
-    const options = ["speed", "size", "morph", "drift"];
-    const pick = options[Math.floor(Math.random() * options.length)];
-    const magnitude = difficultyStepMagnitude(elapsed);
-
-    if (pick === "speed") state.speedDifficulty += magnitude;
-    if (pick === "size") state.sizeDifficulty += magnitude;
-    if (pick === "morph") state.morphDifficulty += magnitude;
-    if (pick === "drift") state.driftDifficulty += magnitude;
-    totalDifficulty += magnitude;
+  function updateContinuousDifficulty(dt) {
+    const rate = 0.22 + elapsed * 0.01;
+    totalDifficulty += dt * rate;
+    state.speedDifficulty = clamp(totalDifficulty * 0.35, 0, 25);
+    state.sizeDifficulty = clamp(totalDifficulty * 0.28, 0, 20);
+    state.morphDifficulty = clamp(totalDifficulty * 0.32, 0, 20);
+    state.driftDifficulty = clamp(totalDifficulty * 0.3, 0, 20);
   }
 
   function updateMotion(dt) {
@@ -485,8 +472,6 @@ function createMouseCircleGame() {
   function updateScore() {
     const score = elapsed * 100;
     scoreReadout.textContent = score.toFixed(2).padStart(7, "0");
-    const progress = clamp(stepTimer / stepDuration, 0, 1);
-    progressFill.style.width = `${(progress * 100).toFixed(1)}%`;
   }
 
   function render() {
@@ -599,7 +584,6 @@ function createPrecisionClicksGame() {
   let animationId = null;
   let lastTime = 0;
   let gameTime = 0;
-  let stepTimer = 0;
   let spawnTimer = 0;
   let score = 0;
   let streak = 0;
@@ -609,7 +593,6 @@ function createPrecisionClicksGame() {
   let totalDifficulty = 0;
   let timeLeft = 30;
 
-  const stepDuration = 5;
   const graceDuration = 2;
   const maxMissed = 3;
   const baseTime = 30;
@@ -652,7 +635,6 @@ function createPrecisionClicksGame() {
     started = false;
     gameTime = 0;
     timeLeft = baseTime;
-    stepTimer = 0;
     spawnTimer = 0;
     totalDifficulty = 0;
     difficulty.spawn = 0;
@@ -685,7 +667,6 @@ function createPrecisionClicksGame() {
 
     if (started) {
       gameTime += dt;
-      stepTimer += dt;
       spawnTimer += dt;
 
       const drainRate = 1 + clamp(totalDifficulty * 0.03, 0, 0.5);
@@ -698,12 +679,9 @@ function createPrecisionClicksGame() {
 
       if (graceTime > 0) {
         graceTime = Math.max(0, graceTime - dt);
-      } else {
-        if (stepTimer >= stepDuration) {
-          stepTimer -= stepDuration;
-          applyDifficultyStep();
-        }
       }
+
+      updateContinuousDifficulty(dt);
 
       const interval = currentSpawnInterval();
       if (spawnTimer >= interval) {
@@ -750,7 +728,6 @@ function createPrecisionClicksGame() {
     if (!started) {
       started = true;
       gameTime = 0;
-      stepTimer = 0;
       spawnTimer = 0;
       totalDifficulty = 0;
       difficulty.spawn = 0;
@@ -824,16 +801,13 @@ function createPrecisionClicksGame() {
     }
   }
 
-  function applyDifficultyStep() {
-    const options = ["spawn", "size", "life", "decoy"];
-    const pick = options[Math.floor(Math.random() * options.length)];
-    const magnitude = difficultyStepMagnitude(gameTime);
-
-    if (pick === "spawn") difficulty.spawn += magnitude;
-    if (pick === "size") difficulty.size += magnitude;
-    if (pick === "life") difficulty.life += magnitude;
-    if (pick === "decoy") difficulty.decoy += magnitude;
-    totalDifficulty += magnitude;
+  function updateContinuousDifficulty(dt) {
+    const rate = 0.25 + gameTime * 0.01;
+    totalDifficulty += dt * rate;
+    difficulty.spawn = clamp(totalDifficulty * 0.28, 0, 20);
+    difficulty.size = clamp(totalDifficulty * 0.22, 0, 18);
+    difficulty.life = clamp(totalDifficulty * 0.26, 0, 18);
+    difficulty.decoy = clamp(totalDifficulty * 0.18, 0, 12);
   }
 
   function currentSpawnInterval() {
@@ -868,8 +842,6 @@ function createPrecisionClicksGame() {
   function updateHud() {
     scoreReadout.textContent = score.toString().padStart(6, "0");
     missedReadout.textContent = `Missed ${missedTargets}/${maxMissed}`;
-    const progress = started ? clamp(stepTimer / stepDuration, 0, 1) : 0;
-    progressFill.style.width = `${(progress * 100).toFixed(1)}%`;
   }
 
   function render() {
@@ -1160,8 +1132,6 @@ function createTimingBarGame() {
   function updateHud() {
     scoreReadout.textContent = score.toString().padStart(6, "0");
     missedReadout.textContent = `Missed ${missed}/${maxMissed}`;
-    const progress = started ? clamp(stepTimer / stepDuration, 0, 1) : 0;
-    progressFill.style.width = `${(progress * 100).toFixed(1)}%`;
   }
 
   function render() {
