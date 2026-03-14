@@ -46,6 +46,9 @@ const gameCanvas = document.getElementById("gameCanvas");
 const progressFill = document.getElementById("difficultyProgress");
 const scoreReadout = document.getElementById("scoreReadout");
 const missedReadout = document.getElementById("missedReadout");
+const gameOver = document.getElementById("gameOver");
+const gameOverScore = document.getElementById("gameOverScore");
+const continueButton = document.getElementById("continueButton");
 const exitButton = document.getElementById("exitButton");
 
 document.body.classList.add("home-active");
@@ -158,6 +161,10 @@ function setupNavigation() {
   exitButton.addEventListener("click", () => {
     GameController.stop();
   });
+
+  continueButton.addEventListener("click", () => {
+    GameController.stop();
+  });
 }
 
 const GameController = (() => {
@@ -186,6 +193,7 @@ const GameController = (() => {
     }
 
     showView(gameScreen);
+    gameOver.classList.add("is-hidden");
     document.body.classList.add("game-active");
     currentGame = gameConfig.createGame();
     currentGame.start();
@@ -198,9 +206,20 @@ const GameController = (() => {
     }
     document.body.classList.remove("game-active");
     showView(selectScreen);
+    gameOver.classList.add("is-hidden");
   }
 
-  return { start, stop };
+  function gameOverScreen(scoreText) {
+    if (currentGame) {
+      currentGame.stop();
+      currentGame = null;
+    }
+    gameOverScore.textContent = `Score ${scoreText}`;
+    gameOver.classList.remove("is-hidden");
+    document.body.classList.remove("game-active");
+  }
+
+  return { start, stop, gameOverScreen };
 })();
 
 function setupGameCards() {
@@ -218,9 +237,11 @@ function createMouseCircleGame() {
   let lastTime = 0;
   let elapsed = 0;
   let stepTimer = 0;
+  let timeLeft = 30;
   let totalDifficulty = 0;
 
   const stepDuration = 5;
+  const baseTime = 30;
   const pulseDurationBase = 4;
   const buffer = 5;
   const shapes = [
@@ -291,6 +312,7 @@ function createMouseCircleGame() {
     state.started = false;
     state.driftTimer = 0;
     state.morphTime = 0;
+    timeLeft = baseTime;
     resize();
     window.addEventListener("resize", resize);
     window.addEventListener("pointermove", handlePointer);
@@ -361,6 +383,13 @@ function createMouseCircleGame() {
       }
 
       checkCollision();
+      const drainRate = 1 + clamp(totalDifficulty * 0.02, 0, 0.5);
+      timeLeft = Math.max(0, timeLeft - dt * drainRate);
+      if (timeLeft <= 0) {
+        const scoreText = scoreReadout.textContent;
+        GameController.gameOverScreen(scoreText);
+        return;
+      }
     }
 
     updateBackground();
@@ -504,7 +533,8 @@ function createMouseCircleGame() {
     const eased = 0.5 - 0.5 * Math.cos(Math.PI * clamp(morphProgress, 0, 1));
     const boundary = shapeRadiusAtAngle(angle, eased) + buffer;
     if (distance > boundary) {
-      GameController.stop();
+      const scoreText = scoreReadout.textContent;
+      GameController.gameOverScreen(scoreText);
     }
   }
 
@@ -577,10 +607,12 @@ function createPrecisionClicksGame() {
   let missedTargets = 0;
   let graceTime = 0;
   let totalDifficulty = 0;
+  let timeLeft = 30;
 
   const stepDuration = 5;
   const graceDuration = 2;
   const maxMissed = 3;
+  const baseTime = 30;
   const targets = [];
   const ctx = gameCanvas.getContext("2d");
 
@@ -619,6 +651,7 @@ function createPrecisionClicksGame() {
     graceTime = 0;
     started = false;
     gameTime = 0;
+    timeLeft = baseTime;
     stepTimer = 0;
     spawnTimer = 0;
     totalDifficulty = 0;
@@ -655,6 +688,14 @@ function createPrecisionClicksGame() {
       stepTimer += dt;
       spawnTimer += dt;
 
+      const drainRate = 1 + clamp(totalDifficulty * 0.03, 0, 0.5);
+      timeLeft = Math.max(0, timeLeft - dt * drainRate);
+      if (timeLeft <= 0) {
+        const scoreText = score.toString().padStart(6, "0");
+        GameController.gameOverScreen(scoreText);
+        return;
+      }
+
       if (graceTime > 0) {
         graceTime = Math.max(0, graceTime - dt);
       } else {
@@ -690,7 +731,8 @@ function createPrecisionClicksGame() {
 
     if (hitIndex === -1) {
       if (started) {
-        GameController.stop();
+        const scoreText = score.toString().padStart(6, "0");
+        GameController.gameOverScreen(scoreText);
       }
       return;
     }
@@ -718,6 +760,7 @@ function createPrecisionClicksGame() {
       targets.length = 0;
       missedTargets = 0;
       graceTime = 0;
+      timeLeft = baseTime;
       spawnTarget(true);
       return;
     }
@@ -772,7 +815,8 @@ function createPrecisionClicksGame() {
           missedTargets += 1;
           graceTime = graceDuration;
           if (missedTargets >= maxMissed) {
-            GameController.stop();
+            const scoreText = score.toString().padStart(6, "0");
+            GameController.gameOverScreen(scoreText);
             return;
           }
         }
@@ -875,6 +919,7 @@ function createTimingBarGame() {
   let streak = 0;
   let missed = 0;
   let started = false;
+  let timeLeft = 30;
   let sliderPos = 0.2;
   let sliderDir = 1;
   let zoneCenter = 0.5;
@@ -883,6 +928,7 @@ function createTimingBarGame() {
 
   const stepDuration = 5;
   const maxMissed = 3;
+  const baseTime = 30;
   const ctx = gameCanvas.getContext("2d");
 
   const difficulty = {
@@ -921,6 +967,7 @@ function createTimingBarGame() {
     gameTime = 0;
     stepTimer = 0;
     stepCount = 0;
+    timeLeft = baseTime;
     difficulty.speed = 0;
     difficulty.size = 0;
     difficulty.move = 0;
@@ -969,6 +1016,14 @@ function createTimingBarGame() {
         applyDifficultyStep();
       }
 
+      const drainRate = 1 + clamp(stepCount * 0.08, 0, 0.5);
+      timeLeft = Math.max(0, timeLeft - dt * drainRate);
+      if (timeLeft <= 0) {
+        const scoreText = score.toString().padStart(6, "0");
+        GameController.gameOverScreen(scoreText);
+        return;
+      }
+
       updateZone(dt);
     }
 
@@ -986,6 +1041,7 @@ function createTimingBarGame() {
     if (!started) {
       started = true;
       gameTime = 0;
+      timeLeft = baseTime;
       stepTimer = 0;
       stepCount = 0;
       difficulty.speed = 0;
@@ -1004,11 +1060,13 @@ function createTimingBarGame() {
       const perfect = distance <= zoneWidth * 0.15;
       streak += 1;
       score += 100 + bonus + (perfect ? 100 : 0) + (streak - 1) * 20;
+      timeLeft = clamp(timeLeft + 0.4, 0, baseTime);
     } else {
       streak = 0;
       missed += 1;
       if (missed >= maxMissed) {
-        GameController.stop();
+        const scoreText = score.toString().padStart(6, "0");
+        GameController.gameOverScreen(scoreText);
         return;
       }
     }
