@@ -177,6 +177,8 @@ function buildGameSections() {
       card.appendChild(title);
       card.appendChild(desc);
 
+      grid.appendChild(card);
+
       HoverPreviewController.init(card, gameId);
       card.addEventListener("mouseenter", () => {
         HoverPreviewController.start(card);
@@ -184,8 +186,6 @@ function buildGameSections() {
       card.addEventListener("mouseleave", () => {
         HoverPreviewController.stop(card);
       });
-
-      grid.appendChild(card);
     });
 
     section.appendChild(heading);
@@ -2079,9 +2079,15 @@ function createRacingGame() {
   let track = null;
   let laps = 2;
   let playerLap = 0;
+  let raceStarted = false;
+  let trafficCars = [];
+  let spawnTimer = 0;
+  let laneMarkerOffset = 0;
+  let hitCooldown = 0;
 
   const ctx = gameCanvas.getContext("2d");
   const keys = new Set();
+  const laneCount = 3;
 
   const state = {
     width: 0,
@@ -2089,6 +2095,11 @@ function createRacingGame() {
     minDim: 0,
     bgColor: "#060708",
     player: createCar(),
+    lanes: [],
+    roadLeft: 0,
+    roadRight: 0,
+    roadWidth: 0,
+    track: null,
   };
 
   function createCar() {
@@ -2133,12 +2144,29 @@ function createRacingGame() {
     distance = 0;
     lives = 3;
     playerLap = 0;
+    raceStarted = false;
     state.player = createCar();
     state.player.x = state.width / 2;
     state.player.y = state.height * 0.75;
     state.player.angle = -Math.PI / 2;
-    bots = createBots();
     track = mode === "race" ? createTrack() : null;
+    state.track = track;
+    if (track) {
+      const start = track.centerline[0];
+      const next = track.centerline[1] ?? start;
+      state.player.x = start.x;
+      state.player.y = start.y;
+      state.player.angle = Math.atan2(next.y - start.y, next.x - start.x);
+      state.player.lap = 0;
+      state.player.progressIndex = 0;
+      state.player.prevIndex = 0;
+      state.player.trackDist = 0;
+    }
+    bots = createBots();
+    trafficCars = [];
+    spawnTimer = 0;
+    laneMarkerOffset = 0;
+    hitCooldown = 0;
     heartsReadout.classList.toggle("is-hidden", mode !== "endless");
     missedReadout.textContent = mode === "race" ? "Place 1/6" : "";
   }
@@ -2154,6 +2182,13 @@ function createRacingGame() {
     state.width = rect.width;
     state.height = rect.height;
     state.minDim = Math.min(rect.width, rect.height);
+    state.roadWidth = state.width * 0.62;
+    state.roadLeft = (state.width - state.roadWidth) / 2;
+    state.roadRight = state.roadLeft + state.roadWidth;
+    state.lanes = Array.from({ length: laneCount }, (_, index) => {
+      const laneWidth = state.roadWidth / laneCount;
+      return state.roadLeft + laneWidth * (index + 0.5);
+    });
   }
 
   function handleKeyDown(event) {
@@ -2185,8 +2220,20 @@ function createRacingGame() {
 
   function updatePlayer(dt) {
     const player = state.player;
-    const accel = keys.has("w") || keys.has("arrowup") ? 240 : keys.has("s") || keys.has("arrowdown") ? -180 : 0;
-    const turn = keys.has("a") || keys.has("arrowleft") ? -1 : keys.has("d") || keys.has("arrowright") ? 1 : 0;
+    let accel = keys.has("w") || keys.has("arrowup") ? 240 : keys.has("s") || keys.has("arrowdown") ? -180 : 0;
+    let turn = keys.has("a") || keys.has("arrowleft") ? -1 : keys.has("d") || keys.has("arrowright") ? 1 : 0;
+    if (mode === "race" && !raceStarted) {
+      if (accel > 0) {
+        raceStarted = true;
+      } else {
+        accel = 0;
+        turn = 0;
+        player.speed *= 0.85;
+        player.vx = 0;
+        player.vy = 0;
+        return;
+      }
+    }
 
     player.speed += accel * dt;
     player.speed *= 0.98;
@@ -2204,36 +2251,65 @@ function createRacingGame() {
   }
 
   function updateEndless(dt) {
-    const roadWidth = state.width * 0.6;
-    const minX = (state.width - roadWidth) / 2;
-    const maxX = minX + roadWidth;
+    const difficulty = clamp(elapsed / 22, 0, 6);
+    const maxSpeed = 240 + difficulty * 80;
+    state.player.speed = clamp(state.player.speed, -180, maxSpeed);
+
+    const minX = state.roadLeft + 12;
+    const maxX = state.roadRight - 12;
     if (state.player.x < minX || state.player.x > maxX) {
       state.player.x = clamp(state.player.x, minX, maxX);
-      state.player.speed *= 0.6;
-      lives -= 1;
-      if (lives <= 0) {
-        GameController.gameOverScreen(Math.floor(score).toString().padStart(6, "0"));
-      }
+      state.player.speed *= 0.55;
     }
-    distance += Math.max(0, state.player.speed) * dt;
-    score = distance * 0.05 + Math.max(0, state.player.speed) * 0.2;
+
+    const forwardSpeed = Math.max(0, state.player.speed);
+    const scrollSpeed = Math.max(120, forwardSpeed * 0.7);
+    laneMarkerOffset = (laneMarkerOffset + scrollSpeed * dt) % 80;
+    hitCooldown = Math.max(0, hitCooldown - dt);
+
+    spawnTimer -= dt;
+    const baseInterval = lerp(1.3, 0.45, difficulty / 6);
+    const maxConcurrent = Math.floor(6 + difficulty * 4);
+    if (spawnTimer <= 0 && trafficCars.length < maxConcurrent) {
+      spawnTraffic(difficulty);
+      spawnTimer = baseInterval * randomRange(0.7, 1.15);
+    }
+
+    updateTraffic(dt, difficulty, forwardSpeed);
+
+    distance += forwardSpeed * dt;
+    score = distance * 0.05 + forwardSpeed * 0.2;
   }
 
   function updateRace(dt) {
+    if (!track) return;
+    if (!raceStarted) {
+      return;
+    }
+
+    const maxSpeed = 260;
+    state.player.speed = clamp(state.player.speed, -120, maxSpeed);
+    updateCarProgress(state.player, track);
+    playerLap = state.player.lap ?? 0;
+
     bots.forEach((bot) => {
-      bot.angle += bot.turnRate * dt;
-      bot.x += Math.cos(bot.angle) * bot.speed * dt;
-      bot.y += Math.sin(bot.angle) * bot.speed * dt;
+      updateBot(bot, dt, track, maxSpeed);
+      updateCarProgress(bot, track);
     });
-    // Simple lap progress: loop around center
-    const dx = state.player.x - state.width / 2;
-    const dy = state.player.y - state.height / 2;
-    const angle = Math.atan2(dy, dx);
-    if (angle > Math.PI * 0.9 && playerLap === 0) {
-      playerLap = 1;
-    } else if (angle < -Math.PI * 0.9 && playerLap === 1) {
-      playerLap = 2;
-      GameController.gameOverScreen("Finished");
+
+    bots.forEach((bot) => {
+      if (checkRaceCollision(state.player, bot)) {
+        applyRaceCollision(state.player, bot);
+      }
+    });
+
+    handleOffTrack(state.player, track);
+    bots.forEach((bot) => handleOffTrack(bot, track));
+
+    const place = calculatePlace(state.player, bots);
+    missedReadout.textContent = `Place ${place}/6`;
+    if ((state.player.lap ?? 0) >= laps) {
+      GameController.gameOverScreen(`Finished P${place}`);
     }
   }
 
@@ -2244,7 +2320,7 @@ function createRacingGame() {
       missedReadout.textContent = "";
     } else {
       heartsReadout.classList.add("is-hidden");
-      missedReadout.textContent = "Place 1/6";
+      missedReadout.textContent = raceStarted ? missedReadout.textContent : "";
     }
   }
 
@@ -2256,33 +2332,36 @@ function createRacingGame() {
     ctx.lineWidth = 2;
 
     if (mode === "endless") {
-      const roadWidth = state.width * 0.6;
-      const left = (state.width - roadWidth) / 2;
-      const right = left + roadWidth;
+      const left = state.roadLeft;
+      const right = state.roadRight;
       ctx.beginPath();
       ctx.moveTo(left, 0);
       ctx.lineTo(left, state.height);
       ctx.moveTo(right, 0);
       ctx.lineTo(right, state.height);
       ctx.stroke();
-      for (let y = 0; y < state.height; y += 40) {
+      ctx.save();
+      ctx.setLineDash([24, 24]);
+      ctx.lineDashOffset = -laneMarkerOffset;
+      const laneWidth = state.roadWidth / laneCount;
+      for (let lane = 1; lane < laneCount; lane += 1) {
+        const x = state.roadLeft + laneWidth * lane;
         ctx.beginPath();
-        ctx.moveTo(state.width / 2, y);
-        ctx.lineTo(state.width / 2, y + 20);
+        ctx.moveTo(x, -80);
+        ctx.lineTo(x, state.height + 80);
         ctx.stroke();
       }
+      ctx.restore();
     } else if (track) {
-      ctx.beginPath();
-      track.forEach((p, idx) => {
-        if (idx === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
-      });
-      ctx.closePath();
-      ctx.stroke();
+      drawTrack(track);
     }
 
     renderCar(state.player);
-    bots.forEach(renderCar);
+    if (mode === "endless") {
+      trafficCars.forEach(renderTrafficCar);
+    } else {
+      bots.forEach(renderCar);
+    }
   }
 
   function renderCar(car) {
@@ -2295,15 +2374,38 @@ function createRacingGame() {
     ctx.restore();
   }
 
+  function renderTrafficCar(car) {
+    ctx.save();
+    ctx.translate(car.x, car.y);
+    ctx.rotate(-Math.PI / 2);
+    ctx.beginPath();
+    ctx.rect(-car.width / 2, -car.height / 2, car.width, car.height);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function createBots() {
     if (mode !== "race") return [];
+    if (!track) return [];
     const list = [];
+    const skills = Array.from({ length: 5 }, () => randomRange(0.6, 1.0));
+    const bestIndex = Math.floor(Math.random() * skills.length);
+    skills[bestIndex] = randomRange(0.95, 1.0);
     for (let i = 0; i < 5; i += 1) {
       const bot = createCar();
-      bot.x = state.width / 2 + Math.cos((i / 5) * Math.PI * 2) * 120;
-      bot.y = state.height / 2 + Math.sin((i / 5) * Math.PI * 2) * 120;
-      bot.speed = 140 + i * 10;
-      bot.turnRate = 0.7 + i * 0.05;
+      const index = (i * 6) % track.centerline.length;
+      const pos = track.centerline[index];
+      const next = track.centerline[(index + 1) % track.centerline.length];
+      bot.x = pos.x;
+      bot.y = pos.y;
+      bot.angle = Math.atan2(next.y - pos.y, next.x - pos.x);
+      bot.speed = 0;
+      bot.skill = skills[i];
+      bot.lap = 0;
+      bot.progressIndex = index;
+      bot.prevIndex = index;
+      bot.noise = randomRange(-0.3, 0.3);
+      bot.throttle = 0;
       list.push(bot);
     }
     return list;
@@ -2313,16 +2415,284 @@ function createRacingGame() {
     const points = [];
     const cx = state.width / 2;
     const cy = state.height / 2;
-    const radius = state.minDim * 0.25;
+    const radius = state.minDim * 0.26;
     for (let i = 0; i < 12; i += 1) {
       const angle = (i / 12) * Math.PI * 2;
-      const jitter = randomRange(-30, 30);
+      const jitter = randomRange(-35, 35);
       points.push({
         x: cx + Math.cos(angle) * (radius + jitter),
         y: cy + Math.sin(angle) * (radius + jitter),
       });
     }
-    return points;
+    const centerline = smoothClosedPath(points, 8);
+    const trackWidth = state.minDim * 0.18;
+    const { inner, outer } = buildTrackEdges(centerline, trackWidth);
+    return { centerline, inner, outer, width: trackWidth };
+  }
+
+  function smoothClosedPath(points, samplesPerSegment) {
+    const result = [];
+    const total = points.length;
+    for (let i = 0; i < total; i += 1) {
+      const p0 = points[(i - 1 + total) % total];
+      const p1 = points[i];
+      const p2 = points[(i + 1) % total];
+      const p3 = points[(i + 2) % total];
+      for (let j = 0; j < samplesPerSegment; j += 1) {
+        const t = j / samplesPerSegment;
+        const t2 = t * t;
+        const t3 = t2 * t;
+        const x =
+          0.5 *
+          ((2 * p1.x) +
+            (-p0.x + p2.x) * t +
+            (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+            (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3);
+        const y =
+          0.5 *
+          ((2 * p1.y) +
+            (-p0.y + p2.y) * t +
+            (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+            (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3);
+        result.push({ x, y });
+      }
+    }
+    return result;
+  }
+
+  function buildTrackEdges(centerline, width) {
+    const inner = [];
+    const outer = [];
+    const half = width / 2;
+    const total = centerline.length;
+    for (let i = 0; i < total; i += 1) {
+      const prev = centerline[(i - 1 + total) % total];
+      const curr = centerline[i];
+      const next = centerline[(i + 1) % total];
+      const dx = next.x - prev.x;
+      const dy = next.y - prev.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len;
+      const ny = dx / len;
+      outer.push({ x: curr.x + nx * half, y: curr.y + ny * half });
+      inner.push({ x: curr.x - nx * half, y: curr.y - ny * half });
+    }
+    return { inner, outer };
+  }
+
+  function updateBot(bot, dt, trackData, maxSpeed) {
+    const skill = bot.skill ?? 0.7;
+    const lookahead = Math.floor(lerp(12, 32, skill));
+    const targetIndex = (bot.progressIndex + lookahead) % trackData.centerline.length;
+    const target = trackData.centerline[targetIndex];
+
+    const desired = Math.atan2(target.y - bot.y, target.x - bot.x);
+    const steeringNoise = lerp(0.35, 0.08, skill);
+    const noisyDesired = desired + bot.noise * steeringNoise;
+    const turnRate = lerp(1.2, 2.4, skill);
+    const diff = angleDelta(noisyDesired, bot.angle);
+    bot.angle += clamp(diff, -turnRate * dt, turnRate * dt);
+
+    const accel = lerp(140, 240, skill);
+    bot.throttle = clamp(bot.throttle + accel * dt, 0, maxSpeed);
+    bot.speed = lerp(bot.speed, bot.throttle, 0.18);
+    bot.speed = clamp(bot.speed, 0, maxSpeed);
+    bot.x += Math.cos(bot.angle) * bot.speed * dt;
+    bot.y += Math.sin(bot.angle) * bot.speed * dt;
+  }
+
+  function updateCarProgress(car, trackData) {
+    if (!trackData) return;
+    const { index, dist } = nearestTrackIndex(car.x, car.y, trackData.centerline);
+    car.prevIndex = car.progressIndex ?? index;
+    car.progressIndex = index;
+    car.trackDist = dist;
+    if (car.prevIndex > trackData.centerline.length * 0.8 && index < trackData.centerline.length * 0.2) {
+      car.lap = (car.lap ?? 0) + 1;
+    }
+  }
+
+  function nearestTrackIndex(x, y, centerline) {
+    let bestIndex = 0;
+    let bestDist = Infinity;
+    centerline.forEach((point, idx) => {
+      const dx = x - point.x;
+      const dy = y - point.y;
+      const d = dx * dx + dy * dy;
+      if (d < bestDist) {
+        bestDist = d;
+        bestIndex = idx;
+      }
+    });
+    return { index: bestIndex, dist: Math.sqrt(bestDist) };
+  }
+
+  function handleOffTrack(car, trackData) {
+    if (!trackData) return;
+    const half = trackData.width / 2;
+    if (car.trackDist > half - 6) {
+      car.speed *= 0.85;
+      const nearest = trackData.centerline[car.progressIndex];
+      const nx = nearest.x - car.x;
+      const ny = nearest.y - car.y;
+      const len = Math.hypot(nx, ny) || 1;
+      car.x += (nx / len) * 8;
+      car.y += (ny / len) * 8;
+    }
+  }
+
+  function calculatePlace(player, botList) {
+    const racers = [player, ...botList];
+    racers.sort((a, b) => {
+      const lapDiff = (b.lap ?? 0) - (a.lap ?? 0);
+      if (lapDiff !== 0) return lapDiff;
+      return (b.progressIndex ?? 0) - (a.progressIndex ?? 0);
+    });
+    return racers.indexOf(player) + 1;
+  }
+
+  function checkRaceCollision(a, b) {
+    const ra = Math.max(a.width, a.height) * 0.45;
+    const rb = Math.max(b.width, b.height) * 0.45;
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return dx * dx + dy * dy < (ra + rb) * (ra + rb);
+  }
+
+  function applyRaceCollision(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const pushX = dx / len;
+    const pushY = dy / len;
+    a.x += pushX * 6;
+    a.y += pushY * 6;
+    b.x -= pushX * 6;
+    b.y -= pushY * 6;
+    a.speed *= 0.7;
+    b.speed *= 0.85;
+    a.angle += randomRange(-0.15, 0.15);
+    b.angle += randomRange(-0.12, 0.12);
+  }
+
+  function drawTrack(trackData) {
+    ctx.beginPath();
+    trackData.outer.forEach((p, idx) => {
+      if (idx === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+
+    ctx.beginPath();
+    trackData.inner.forEach((p, idx) => {
+      if (idx === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+
+    const start = trackData.centerline[0];
+    const next = trackData.centerline[1] ?? start;
+    const dx = next.x - start.x;
+    const dy = next.y - start.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const half = trackData.width / 2;
+    ctx.beginPath();
+    ctx.moveTo(start.x - nx * half, start.y - ny * half);
+    ctx.lineTo(start.x + nx * half, start.y + ny * half);
+    ctx.stroke();
+  }
+
+  function angleDelta(target, current) {
+    let diff = target - current;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    return diff;
+  }
+
+  function spawnTraffic(difficulty) {
+    if (!state.lanes.length) return;
+    const laneIndex = Math.floor(Math.random() * laneCount);
+    if (!isLaneClear(laneIndex, -60)) return;
+    const speedBase = 100 + difficulty * 45;
+    const speedScale = randomRange(0.55, 1.1);
+    const car = {
+      laneFrom: laneIndex,
+      laneTo: laneIndex,
+      laneProgress: 0,
+      laneSpeed: randomRange(0.5, 0.8),
+      x: state.lanes[laneIndex],
+      y: -randomRange(60, 180),
+      speed: speedBase * speedScale,
+      width: 18,
+      height: 30,
+      changeCooldown: randomRange(0.6, 1.4),
+    };
+    trafficCars.push(car);
+  }
+
+  function updateTraffic(dt, difficulty, forwardSpeed) {
+    const changeChance = lerp(0.3, 1.0, difficulty / 6);
+    const trafficSpeedBonus = forwardSpeed * 0.35;
+
+    trafficCars.forEach((car) => {
+      car.y += (car.speed + trafficSpeedBonus) * dt;
+      car.changeCooldown -= dt;
+
+      if (car.laneFrom !== car.laneTo) {
+        car.laneProgress = clamp(car.laneProgress + dt * car.laneSpeed, 0, 1);
+        const ease = car.laneProgress * car.laneProgress * (3 - 2 * car.laneProgress);
+        car.x = lerp(state.lanes[car.laneFrom], state.lanes[car.laneTo], ease);
+        if (car.laneProgress >= 1) {
+          car.laneFrom = car.laneTo;
+          car.laneProgress = 0;
+        }
+      } else if (car.changeCooldown <= 0 && Math.random() < changeChance * dt) {
+        const direction = Math.random() < 0.5 ? -1 : 1;
+        const candidate = clamp(car.laneFrom + direction, 0, laneCount - 1);
+        if (candidate !== car.laneFrom && isLaneClear(candidate, car.y)) {
+          car.laneTo = candidate;
+          car.laneSpeed = randomRange(0.55, 0.95);
+          car.changeCooldown = randomRange(1.2, 2.4);
+        } else {
+          car.changeCooldown = randomRange(0.4, 1.0);
+        }
+      }
+    });
+
+    trafficCars = trafficCars.filter((car) => car.y < state.height + 100);
+
+    trafficCars.forEach((car) => {
+      if (hitCooldown <= 0 && checkCarCollision(state.player, car)) {
+        lives -= 1;
+        hitCooldown = 0.6;
+        state.player.speed *= 0.6;
+        state.player.vx *= 0.4;
+        state.player.vy *= 0.4;
+        car.y += 60;
+        if (lives <= 0) {
+          GameController.gameOverScreen(Math.floor(score).toString().padStart(6, "0"));
+        }
+      }
+    });
+  }
+
+  function isLaneClear(laneIndex, y) {
+    return !trafficCars.some((car) => {
+      if (car.laneFrom !== laneIndex && car.laneTo !== laneIndex) return false;
+      return Math.abs(car.y - y) < 120;
+    });
+  }
+
+  function checkCarCollision(a, b) {
+    const ax = a.x - a.width / 2;
+    const ay = a.y - a.height / 2;
+    const bx = b.x - b.width / 2;
+    const by = b.y - b.height / 2;
+    return ax < bx + b.width && ax + a.width > bx && ay < by + b.height && ay + a.height > by;
   }
 
   return { start, stop, startMode };
