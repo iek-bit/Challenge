@@ -1883,6 +1883,16 @@ function createRacingModeGame() {
   const input = { left: false, right: false };
   const trail = [];
   const tireMarks = [];
+  const carPoly = Array.from({ length: 7 }, () => ({ x: 0, y: 0 }));
+  const carShape = [
+    [0, -22],
+    [10, -8],
+    [12, 10],
+    [6, 22],
+    [-6, 22],
+    [-12, 10],
+    [-10, -8],
+  ];
   const renderCache = { left: [], right: [], points: [] };
 
   const state = {
@@ -1892,6 +1902,7 @@ function createRacingModeGame() {
     elapsed: 0,
     scoreTime: 0,
     finalScore: 0,
+    collisionFlash: 0,
   };
 
   const player = {
@@ -1903,6 +1914,7 @@ function createRacingModeGame() {
     speed: 380,
     turnRate: 2.8,
     slipAngle: 0,
+    lateralVel: 0,
     distance: 0,
   };
 
@@ -2061,10 +2073,12 @@ function createRacingModeGame() {
     player.speed = player.baseSpeed;
     player.distance = 0;
     player.slipAngle = 0;
+    player.lateralVel = 0;
     player.velocity.x = Math.cos(player.heading) * player.speed;
     player.velocity.y = Math.sin(player.heading) * player.speed;
     trail.length = 0;
     tireMarks.length = 0;
+    state.collisionFlash = 0;
 
     track.segments.length = 0;
     track.obstacles.length = 0;
@@ -2134,26 +2148,31 @@ function createRacingModeGame() {
   function update(dt) {
     state.elapsed += dt;
     state.scoreTime = state.elapsed;
+    state.collisionFlash = Math.max(0, state.collisionFlash - dt);
     // Speed scaling: start fast and ramp slightly over time.
     const speedBoost = Math.min(state.elapsed * 6, 260);
     player.speed = player.baseSpeed + speedBoost;
 
     const steering = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    player.heading += steering * player.turnRate * dt;
-    // Drift mechanic: slip angle grows with sharp steering at high speed, then eases back.
     const speedRatio = player.speed / player.baseSpeed;
-    const steeringForce = steering * speedRatio;
-    const slipTarget = clamp(steeringForce * 0.45, -0.6, 0.6);
-    player.slipAngle = lerp(player.slipAngle, slipTarget, 0.06 + speedRatio * 0.02);
-    player.slipAngle *= 0.985;
+    // Steering sensitivity scales down at higher speeds for smoother control.
+    const steeringScale = 1 / (1 + speedRatio * 0.55);
+    player.heading += steering * player.turnRate * steeringScale * dt;
 
-    // Velocity follows the slip angle while the car heading stays authoritative.
-    const velocityAngle = player.heading + player.slipAngle;
-    const desiredVX = Math.cos(velocityAngle) * player.speed;
-    const desiredVY = Math.sin(velocityAngle) * player.speed;
-    const traction = clamp(0.22 + 0.2 / speedRatio, 0.18, 0.38);
-    player.velocity.x = lerp(player.velocity.x, desiredVX, traction);
-    player.velocity.y = lerp(player.velocity.y, desiredVY, traction);
+    // Drift physics: lateral velocity builds with hard steering at high speed, then decays.
+    const driftInput = Math.abs(steering) > 0.25 ? steering : 0;
+    const lateralAccel = driftInput * player.speed * 0.9;
+    player.lateralVel += lateralAccel * dt;
+    player.lateralVel = clamp(player.lateralVel, -player.speed * 0.65, player.speed * 0.65);
+    const grip = 2.4 - clamp(speedRatio * 0.6, 0, 1.4);
+    player.lateralVel *= Math.exp(-grip * dt);
+
+    const forwardVX = Math.cos(player.heading) * player.speed;
+    const forwardVY = Math.sin(player.heading) * player.speed;
+    const nx = -Math.sin(player.heading);
+    const ny = Math.cos(player.heading);
+    player.velocity.x = forwardVX + nx * player.lateralVel;
+    player.velocity.y = forwardVY + ny * player.lateralVel;
     const vLen = Math.hypot(player.velocity.x, player.velocity.y) || 1;
     player.velocity.x = (player.velocity.x / vLen) * player.speed;
     player.velocity.y = (player.velocity.y / vLen) * player.speed;
@@ -2170,13 +2189,12 @@ function createRacingModeGame() {
     }
 
     ensureSegments();
-    const { distanceFromCenter, halfWidth } = distanceToCenterline(player.x, player.y);
-    if (distanceFromCenter > halfWidth) {
-      endRun();
+    if (carOutOfBounds()) {
+      triggerCollision();
       return;
     }
-    if (checkObstacleCollision(player.x, player.y)) {
-      endRun();
+    if (checkObstacleCollision()) {
+      triggerCollision();
       return;
     }
 
@@ -2454,19 +2472,59 @@ function createRacingModeGame() {
     }
   }
 
-  function checkObstacleCollision(px, py) {
-    const hitRadius = 10;
+  function checkObstacleCollision() {
+    const poly = getCarPolygon();
     const minS = player.distance - 200;
     const maxS = player.distance + 500;
     for (let i = 0; i < track.obstacles.length; i += 1) {
       const obstacle = track.obstacles[i];
       if (obstacle.s < minS || obstacle.s > maxS) continue;
-      const distance = Math.hypot(px - obstacle.x, py - obstacle.y);
-      if (distance < obstacle.radius + hitRadius) {
+      if (polygonCircleCollision(poly, obstacle.x, obstacle.y, obstacle.radius + 4)) {
         return true;
       }
     }
     return false;
+  }
+
+  function carOutOfBounds() {
+    const poly = getCarPolygon();
+    for (let i = 0; i < poly.length; i += 1) {
+      const point = poly[i];
+      const { distanceFromCenter, halfWidth } = distanceToCenterline(point.x, point.y);
+      if (distanceFromCenter > halfWidth) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function getCarPolygon() {
+    const angle = player.heading + Math.PI / 2;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    for (let i = 0; i < carShape.length; i += 1) {
+      const [lx, ly] = carShape[i];
+      carPoly[i].x = player.x + lx * cos - ly * sin;
+      carPoly[i].y = player.y + lx * sin + ly * cos;
+    }
+    return carPoly;
+  }
+
+  function polygonCircleCollision(poly, cx, cy, radius) {
+    for (let i = 0; i < poly.length; i += 1) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      const distance = distancePointToSegment(cx, cy, a.x, a.y, b.x, b.y);
+      if (distance <= radius) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function triggerCollision() {
+    state.collisionFlash = 0.28;
+    endRun();
   }
 
   function addLinesFromPoints(points) {
@@ -2582,6 +2640,16 @@ function createRacingModeGame() {
     drawObstacles(centerX, centerY);
     drawTrail(centerX, centerY);
     drawCar(centerX, centerY);
+    drawCollisionFlash();
+  }
+
+  function drawCollisionFlash() {
+    if (state.collisionFlash <= 0) return;
+    const alpha = clamp(state.collisionFlash / 0.28, 0, 1) * 0.6;
+    ctx.save();
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+    ctx.fillRect(0, 0, state.width, state.height);
+    ctx.restore();
   }
 
   function buildRenderPaths(points, centerX, centerY) {
@@ -2727,8 +2795,8 @@ function createRacingModeGame() {
   }
 
   function updateTireMarks(dt) {
-    const driftAmount = Math.abs(player.slipAngle);
-    const isDrifting = driftAmount > 0.12;
+    const driftAmount = Math.abs(player.lateralVel);
+    const isDrifting = driftAmount > player.speed * 0.12;
     if (isDrifting) {
       const rearOffset = -18;
       const sideOffset = 8;
