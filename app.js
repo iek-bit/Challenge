@@ -1882,13 +1882,15 @@ function createRacingModeGame() {
   const ctx = gameCanvas.getContext("2d");
   const input = { left: false, right: false };
   const trail = [];
-  const renderCache = { left: [], right: [], center: [], points: [] };
+  const renderCache = { left: [], right: [], points: [] };
 
   const state = {
     width: 0,
     height: 0,
     mode: "START",
     elapsed: 0,
+    scoreTime: 0,
+    finalScore: 0,
   };
 
   const player = {
@@ -1902,17 +1904,22 @@ function createRacingModeGame() {
   };
 
   const track = {
-    width: 120,
+    widthMin: 80,
+    widthMax: 180,
+    baseWidth: 120,
+    currentWidth: 120,
     minLen: 150,
     maxLen: 250,
     step: 24,
     segments: [],
+    obstacles: [],
+    pending: [],
+    cooldown: 0,
+    lastType: "straight",
     totalLength: 0,
     lastPos: { x: 0, y: 0 },
     lastHeading: -Math.PI / 2,
     currentTurn: 0,
-    desiredTurn: 0,
-    turnQueue: [],
   };
 
   let startOverlay = null;
@@ -1977,7 +1984,7 @@ function createRacingModeGame() {
       gameOverOverlay.innerHTML = `
         <div class="racing-card">
           <div class="racing-title">Game Over</div>
-          <div class="racing-score">Score: 0000000</div>
+          <div class="racing-score">Score: 0.0</div>
           <button class="start-button" type="button">Restart</button>
         </div>
       `;
@@ -2042,6 +2049,8 @@ function createRacingModeGame() {
   function resetGame() {
     state.mode = "START";
     state.elapsed = 0;
+    state.scoreTime = 0;
+    state.finalScore = 0;
     player.x = 0;
     player.y = 0;
     player.heading = -Math.PI / 2;
@@ -2050,12 +2059,15 @@ function createRacingModeGame() {
     trail.length = 0;
 
     track.segments.length = 0;
+    track.obstacles.length = 0;
+    track.pending.length = 0;
+    track.cooldown = 0;
+    track.lastType = "straight";
     track.totalLength = 0;
     track.lastPos = { x: 0, y: 0 };
     track.lastHeading = -Math.PI / 2;
     track.currentTurn = 0;
-    track.desiredTurn = 0;
-    track.turnQueue.length = 0;
+    track.currentWidth = track.baseWidth;
 
     ensureSegments();
     if (startOverlay) {
@@ -2087,7 +2099,8 @@ function createRacingModeGame() {
     if (animationId) {
       cancelAnimationFrame(animationId);
     }
-    const scoreText = formatScore(player.distance);
+    state.finalScore = state.scoreTime;
+    const scoreText = formatScore(state.finalScore);
     if (gameOverScore) {
       gameOverScore.textContent = `Score: ${scoreText}`;
     }
@@ -2111,7 +2124,8 @@ function createRacingModeGame() {
 
   function update(dt) {
     state.elapsed += dt;
-    const speedBoost = Math.min(state.elapsed * 6, 180);
+    state.scoreTime = state.elapsed;
+    const speedBoost = Math.min(state.elapsed * 4, 160);
     player.speed = player.baseSpeed + speedBoost;
 
     const steering = (input.right ? 1 : 0) - (input.left ? 1 : 0);
@@ -2126,8 +2140,12 @@ function createRacingModeGame() {
     }
 
     ensureSegments();
-    const distanceFromCenter = distanceToCenterline(player.x, player.y);
-    if (distanceFromCenter > track.width / 2) {
+    const { distanceFromCenter, halfWidth } = distanceToCenterline(player.x, player.y);
+    if (distanceFromCenter > halfWidth) {
+      endRun();
+      return;
+    }
+    if (checkObstacleCollision(player.x, player.y)) {
       endRun();
       return;
     }
@@ -2136,86 +2154,256 @@ function createRacingModeGame() {
   }
 
   function ensureSegments() {
-    const aheadDistance = 2600;
-    while (track.totalLength < player.distance + aheadDistance) {
+    const renderPad = Math.max(state.width, state.height) * 1.3;
+    const aheadDistance = Math.max(2600, renderPad * 2.4);
+    while (track.segments.length < 12 || track.totalLength < player.distance + aheadDistance) {
       addSegment();
     }
-    const pruneBefore = player.distance - 500;
+    const pruneBefore = player.distance - 700;
     while (track.segments.length && track.segments[0].endS < pruneBefore) {
       track.segments.shift();
     }
+    pruneObstacles(pruneBefore);
   }
 
   function addSegment() {
-    const length = randomRange(track.minLen, track.maxLen);
-    chooseTurnTarget();
-    track.currentTurn += (track.desiredTurn - track.currentTurn) * 0.45;
-    track.currentTurn = clamp(track.currentTurn, -0.32, 0.32);
+    const plan = nextPlannedSegment();
+    const length = plan.length;
+    const widthStart = plan.widthStart;
+    const widthEnd = plan.widthEnd;
 
+    // Smooth the heading change between segments.
+    track.currentTurn = lerp(track.currentTurn, plan.turn, 0.55);
     const deltaHeading = track.currentTurn;
     const steps = Math.max(6, Math.ceil(length / track.step));
     let x = track.lastPos.x;
     let y = track.lastPos.y;
     const heading = track.lastHeading;
     let s = track.totalLength;
-    const points = [{ x, y, heading, s }];
+    const points = [{ x, y, heading, s, width: widthStart }];
 
     for (let i = 1; i <= steps; i += 1) {
       const t = i / steps;
       const stepHeading = heading + deltaHeading * t;
+      const width = lerp(widthStart, widthEnd, t);
       const stepLen = length / steps;
       x += Math.cos(stepHeading) * stepLen;
       y += Math.sin(stepHeading) * stepLen;
       s += stepLen;
-      points.push({ x, y, heading: stepHeading, s });
+      points.push({ x, y, heading: stepHeading, s, width });
     }
 
     track.lastPos = { x, y };
     track.lastHeading = heading + deltaHeading;
     track.totalLength = s;
+    track.currentWidth = widthEnd;
 
-    track.segments.push({
+    const segment = {
       points,
       startS: points[0].s,
       endS: s,
-    });
+      type: plan.type,
+    };
+    track.segments.push(segment);
+    track.lastType = plan.type;
+
+    if (plan.obstacleCount > 0) {
+      spawnObstacles(segment, plan.obstacleCount);
+    }
   }
 
-  function chooseTurnTarget() {
-    if (track.turnQueue.length) {
-      track.desiredTurn = track.turnQueue.shift();
-      return;
+  // Segment types:
+  // straight, gentle, medium, sharp, uturn, s, narrow, widen, obstacle
+  // Difficulty scaling: probabilities shift every ~30s to favor harder segments.
+  function nextPlannedSegment() {
+    if (track.pending.length) {
+      return track.pending.shift();
     }
 
-    const roll = Math.random();
-    if (roll < 0.22) {
-      track.desiredTurn = 0;
-    } else if (roll < 0.6) {
-      track.desiredTurn = randomSignedRange(0.04, 0.12);
-    } else if (roll < 0.85) {
-      track.desiredTurn = randomSignedRange(0.12, 0.2);
-    } else {
-      const sign = Math.random() < 0.5 ? -1 : 1;
-      track.turnQueue.push(sign * randomRange(0.12, 0.18));
-      track.turnQueue.push(-sign * randomRange(0.12, 0.18));
-      track.turnQueue.push(0);
-      track.desiredTurn = track.turnQueue.shift();
+    if (track.cooldown > 0) {
+      track.cooldown -= 1;
+      return planStraightOrGentle();
     }
+
+    const weights = getSegmentWeights(state.elapsed);
+    let type = pickWeightedSegment(weights);
+
+    if (track.lastType === "sharp" || track.lastType === "uturn") {
+      type = "straight";
+    }
+
+    if (type === "s") {
+      const sign = Math.random() < 0.5 ? -1 : 1;
+      const curve = randomRange(0.16, 0.24) * sign;
+      track.pending.push(makePlan("s", curve, curveLength(), track.currentWidth));
+      track.pending.push(makePlan("s", -curve, curveLength(), track.currentWidth));
+      track.cooldown = 1;
+      return track.pending.shift();
+    }
+
+    if (type === "uturn") {
+      const sign = Math.random() < 0.5 ? -1 : 1;
+      const turn = (Math.PI / 5) * sign;
+      const length = randomRange(150, 190);
+      for (let i = 0; i < 5; i += 1) {
+        track.pending.push(makePlan("uturn", turn, length, track.currentWidth));
+      }
+      track.pending.push(makePlan("straight", 0, randomRange(140, 190), track.currentWidth));
+      track.cooldown = 2;
+      return track.pending.shift();
+    }
+
+    if (type === "narrow" || type === "widen") {
+      const targetWidth = clamp(
+        track.currentWidth + (type === "widen" ? 1 : -1) * randomRange(18, 40),
+        track.widthMin,
+        track.widthMax,
+      );
+      return makePlan(type, randomSignedRange(0.02, 0.08), randomRange(170, 230), targetWidth);
+    }
+
+    if (type === "obstacle") {
+      const turn = randomSignedRange(0, 0.12);
+      const obstacles = state.elapsed > 60 ? 2 : 1;
+      return makePlan("obstacle", turn, randomRange(160, 220), track.currentWidth, obstacles);
+    }
+
+    if (type === "sharp") {
+      track.cooldown = 1;
+    }
+
+    return planSimpleCurve(type);
+  }
+
+  function getSegmentWeights(elapsedSeconds) {
+    const stage = clamp(Math.floor(elapsedSeconds / 30), 0, 8);
+    const t = stage / 8;
+    // Base weights roughly match the requested early-game mix, then shift harder over time.
+    const weights = {
+      straight: lerp(0.3, 0.12, t),
+      gentle: lerp(0.3, 0.18, t),
+      medium: lerp(0.15, 0.18, t),
+      sharp: lerp(0.05, 0.16, t),
+      uturn: lerp(0.02, 0.08, t),
+      s: lerp(0.1, 0.16, t),
+      narrow: lerp(0.025, 0.06, t),
+      widen: lerp(0.025, 0.06, t),
+      obstacle: lerp(0.03, 0.12, t),
+    };
+
+    // Keep a small chance of straights at all times for fairness.
+    weights.straight = Math.max(0.08, weights.straight);
+    return weights;
+  }
+
+  function pickWeightedSegment(weights) {
+    const entries = Object.entries(weights);
+    const total = entries.reduce((sum, [, value]) => sum + value, 0);
+    let roll = Math.random() * total;
+    for (let i = 0; i < entries.length; i += 1) {
+      const [key, value] = entries[i];
+      roll -= value;
+      if (roll <= 0) {
+        return key;
+      }
+    }
+    return "straight";
+  }
+
+  function planStraightOrGentle() {
+    return Math.random() < 0.5 ? planSimpleCurve("straight") : planSimpleCurve("gentle");
+  }
+
+  function planSimpleCurve(type) {
+    if (type === "straight") {
+      return makePlan("straight", 0, randomRange(170, 240), track.currentWidth);
+    }
+    if (type === "gentle") {
+      return makePlan("gentle", randomSignedRange(0.04, 0.12), curveLength(), track.currentWidth);
+    }
+    if (type === "medium") {
+      return makePlan("medium", randomSignedRange(0.12, 0.24), randomRange(160, 220), track.currentWidth);
+    }
+    if (type === "sharp") {
+      return makePlan("sharp", randomSignedRange(0.24, 0.4), randomRange(150, 200), track.currentWidth);
+    }
+    return makePlan("straight", 0, randomRange(170, 240), track.currentWidth);
+  }
+
+  function curveLength() {
+    return randomRange(170, 230);
+  }
+
+  function makePlan(type, turn, length, widthEnd, obstacleCount = 0) {
+    return {
+      type,
+      turn,
+      length: clamp(length, track.minLen, track.maxLen),
+      widthStart: track.currentWidth,
+      widthEnd,
+      obstacleCount,
+    };
+  }
+
+  function spawnObstacles(segment, count) {
+    const points = segment.points;
+    for (let i = 0; i < count; i += 1) {
+      const t = (i + 1) / (count + 2);
+      const index = Math.floor(t * (points.length - 1));
+      const point = points[index];
+      const width = point.width;
+      const offset = randomSignedRange(0, width * 0.18);
+      const nx = -Math.sin(point.heading);
+      const ny = Math.cos(point.heading);
+      track.obstacles.push({
+        x: point.x + nx * offset,
+        y: point.y + ny * offset,
+        s: point.s,
+        radius: 10 + Math.random() * 3,
+        heading: point.heading,
+        type: Math.random() < 0.5 ? "cone" : "barrier",
+      });
+    }
+  }
+
+  function pruneObstacles(pruneBefore) {
+    for (let i = track.obstacles.length - 1; i >= 0; i -= 1) {
+      if (track.obstacles[i].s < pruneBefore) {
+        track.obstacles.splice(i, 1);
+      }
+    }
+  }
+
+  function checkObstacleCollision(px, py) {
+    const hitRadius = 10;
+    const minS = player.distance - 200;
+    const maxS = player.distance + 500;
+    for (let i = 0; i < track.obstacles.length; i += 1) {
+      const obstacle = track.obstacles[i];
+      if (obstacle.s < minS || obstacle.s > maxS) continue;
+      const distance = Math.hypot(px - obstacle.x, py - obstacle.y);
+      if (distance < obstacle.radius + hitRadius) {
+        return true;
+      }
+    }
+    return false;
   }
 
   function updateHud() {
-    const scoreText = formatScore(player.distance);
+    const scoreValue = state.mode === "GAME_OVER" ? state.finalScore : state.scoreTime;
+    const scoreText = formatScore(scoreValue);
     scoreReadout.textContent = `Score: ${scoreText}`;
     missedReadout.textContent = "";
   }
 
   function formatScore(distance) {
-    return Math.floor(distance).toString().padStart(7, "0");
+    return distance.toFixed(1);
   }
 
   function collectRenderPoints() {
-    const minS = player.distance - 400;
-    const maxS = player.distance + 2000;
+    const renderPad = Math.max(state.width, state.height) * 1.3;
+    const minS = player.distance - renderPad;
+    const maxS = player.distance + renderPad * 2.2;
     renderCache.points.length = 0;
     track.segments.forEach((segment, index) => {
       const startIndex = index === 0 ? 0 : 1;
@@ -2241,7 +2429,7 @@ function createRacingModeGame() {
 
     buildRenderPaths(points, centerX, centerY);
     drawTrack();
-    drawCenterAccent();
+    drawObstacles(centerX, centerY);
     drawTrail(centerX, centerY);
     drawCar(centerX, centerY);
   }
@@ -2249,8 +2437,6 @@ function createRacingModeGame() {
   function buildRenderPaths(points, centerX, centerY) {
     renderCache.left.length = 0;
     renderCache.right.length = 0;
-    renderCache.center.length = 0;
-    const half = track.width / 2;
 
     points.forEach((point) => {
       const dx = point.x - player.x;
@@ -2259,7 +2445,7 @@ function createRacingModeGame() {
       const screenY = centerY + dy;
       const nx = -Math.sin(point.heading);
       const ny = Math.cos(point.heading);
-      renderCache.center.push(screenX, screenY);
+      const half = point.width / 2;
       renderCache.left.push(screenX + nx * half, screenY + ny * half);
       renderCache.right.push(screenX - nx * half, screenY - ny * half);
     });
@@ -2294,12 +2480,34 @@ function createRacingModeGame() {
     drawLine(renderCache.right);
   }
 
-  function drawCenterAccent() {
+  function drawObstacles(centerX, centerY) {
+    if (!track.obstacles.length) return;
     ctx.save();
-    ctx.strokeStyle = "rgba(0, 255, 210, 0.35)";
+    ctx.strokeStyle = "#f5f5f5";
     ctx.lineWidth = 2;
-    ctx.setLineDash([16, 18]);
-    drawLine(renderCache.center);
+    track.obstacles.forEach((obstacle) => {
+      const sx = centerX + (obstacle.x - player.x);
+      const sy = centerY + (obstacle.y - player.y);
+      if (sx < -60 || sy < -60 || sx > state.width + 60 || sy > state.height + 60) {
+        return;
+      }
+      if (obstacle.type === "cone") {
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - obstacle.radius);
+        ctx.lineTo(sx - obstacle.radius * 0.7, sy + obstacle.radius);
+        ctx.lineTo(sx + obstacle.radius * 0.7, sy + obstacle.radius);
+        ctx.closePath();
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.moveTo(sx - obstacle.radius, sy - obstacle.radius * 0.4);
+        ctx.lineTo(sx + obstacle.radius, sy - obstacle.radius * 0.4);
+        ctx.lineTo(sx + obstacle.radius * 1.2, sy + obstacle.radius * 0.6);
+        ctx.lineTo(sx - obstacle.radius * 1.2, sy + obstacle.radius * 0.6);
+        ctx.closePath();
+        ctx.stroke();
+      }
+    });
     ctx.restore();
   }
 
@@ -2379,10 +2587,23 @@ function createRacingModeGame() {
     ctx.restore();
   }
 
+  function distancePointToSegmentWithT(px, py, ax, ay, bx, by) {
+    const vx = bx - ax;
+    const vy = by - ay;
+    const wx = px - ax;
+    const wy = py - ay;
+    const len2 = vx * vx + vy * vy || 1;
+    const t = clamp((wx * vx + wy * vy) / len2, 0, 1);
+    const cx = ax + t * vx;
+    const cy = ay + t * vy;
+    return { distance: Math.hypot(px - cx, py - cy), t };
+  }
+
   function distanceToCenterline(px, py) {
     let closest = Infinity;
-    const minS = player.distance - 500;
-    const maxS = player.distance + 900;
+    let halfWidth = track.currentWidth / 2;
+    const minS = player.distance - 600;
+    const maxS = player.distance + 1100;
     track.segments.forEach((segment) => {
       const points = segment.points;
       for (let i = 0; i < points.length - 1; i += 1) {
@@ -2390,13 +2611,14 @@ function createRacingModeGame() {
         const b = points[i + 1];
         if (b.s < minS) continue;
         if (a.s > maxS) break;
-        const distance = distancePointToSegment(px, py, a.x, a.y, b.x, b.y);
+        const { distance, t } = distancePointToSegmentWithT(px, py, a.x, a.y, b.x, b.y);
         if (distance < closest) {
           closest = distance;
+          halfWidth = lerp(a.width, b.width, t) / 2;
         }
       }
     });
-    return closest;
+    return { distanceFromCenter: closest, halfWidth };
   }
 
   return { start, stop };
