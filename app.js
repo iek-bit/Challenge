@@ -1412,6 +1412,10 @@ function createFollowPathGame() {
     targetX: 0,
     turnTimer: 0,
     oscPhase: 0,
+    widthPhase: Math.random() * Math.PI * 2,
+    speedPhase: Math.random() * Math.PI * 2,
+    spanMin: 0,
+    spanMax: 0,
   };
 
   function resize() {
@@ -1464,10 +1468,12 @@ function createFollowPathGame() {
   function initPath() {
     points.length = 0;
     const midX = state.width / 2;
+    pathState.spanMin = state.width * 0.1;
+    pathState.spanMax = state.width * 0.9;
     const top = -margin;
     const bottom = state.height + margin;
     for (let y = top; y <= bottom; y += segmentHeight) {
-      points.push({ x: midX, y });
+      points.push({ x: midX, y, w: currentTubeHalfWidth(0) });
     }
     pathState.targetX = midX;
     pathState.turnTimer = 0.6;
@@ -1529,31 +1535,57 @@ function createFollowPathGame() {
     while (points.length === 0 || points[0].y > topLimit) {
       const nextY = points.length === 0 ? topLimit : points[0].y - segmentHeight;
       const nextX = generateNextX(difficulty, scrollSpeed);
-      points.unshift({ x: nextX, y: nextY });
+      const nextW = generateNextWidth(difficulty, scrollSpeed);
+      points.unshift({ x: nextX, y: nextY, w: nextW });
     }
   }
 
   function generateNextX(difficulty, scrollSpeed) {
     const complexity = clamp(difficulty * 0.6, 0, 24);
+    const wildness = clamp((difficulty - 18) / 10, 0, 1);
     const intervalMin = lerp(0.25, 0.8, 1 - clamp(complexity / 18, 0, 1));
     const intervalMax = lerp(0.5, 1.4, 1 - clamp(complexity / 18, 0, 1));
-    const maxDelta = lerp(18, 72, clamp(complexity / 24, 0, 1));
-    const oscAmp = lerp(0.08, 0.22, clamp(complexity / 24, 0, 1));
+    const maxDelta = lerp(18, 72, clamp(complexity / 24, 0, 1)) * (1 + wildness * 0.45);
+    const oscAmp = lerp(0.08, 0.22, clamp(complexity / 24, 0, 1)) * (1 + wildness * 0.6);
 
     const dtSegment = segmentHeight / Math.max(scrollSpeed, 1);
     pathState.turnTimer -= dtSegment;
     if (pathState.turnTimer <= 0) {
       const marginX = currentTubeHalfWidth(difficulty) + 24;
-      pathState.targetX = randomRange(marginX, state.width - marginX);
-      pathState.turnTimer = randomRange(intervalMin, intervalMax);
+      const spanChance = Math.random();
+      if (spanChance < 0.35 + wildness * 0.25) {
+        const spanWidth = randomRange(state.width * (0.35 - wildness * 0.05), state.width * (0.75 - wildness * 0.1));
+        const spanCenter = randomRange(state.width * 0.25, state.width * 0.75);
+        pathState.spanMin = clamp(spanCenter - spanWidth * 0.5, marginX, state.width - marginX);
+        pathState.spanMax = clamp(spanCenter + spanWidth * 0.5, marginX, state.width - marginX);
+      } else {
+        pathState.spanMin = marginX;
+        pathState.spanMax = state.width - marginX;
+      }
+      pathState.targetX = randomRange(pathState.spanMin, pathState.spanMax);
+      const wildMin = intervalMin * (1 - wildness * 0.45);
+      const wildMax = intervalMax * (1 - wildness * 0.4);
+      pathState.turnTimer = randomRange(wildMin, wildMax);
     }
 
     const lastX = points.length > 0 ? points[0].x : state.width / 2;
     const delta = clamp(pathState.targetX - lastX, -maxDelta, maxDelta);
-    pathState.oscPhase += dtSegment * (1.6 + complexity * 0.08);
+    pathState.oscPhase += dtSegment * (1.6 + complexity * 0.08 + wildness * 1.4);
     const oscillation = Math.sin(pathState.oscPhase) * oscAmp * state.width;
-    const nextX = clamp(lastX + delta * 0.35 + oscillation, 20, state.width - 20);
+    const nextX = clamp(lastX + delta * 0.35 + oscillation, pathState.spanMin, pathState.spanMax);
     return nextX;
+  }
+
+  function generateNextWidth(difficulty, scrollSpeed) {
+    const wildness = clamp((difficulty - 18) / 10, 0, 1);
+    const base = currentTubeHalfWidth(difficulty);
+    const dtSegment = segmentHeight / Math.max(scrollSpeed, 1);
+    pathState.widthPhase += dtSegment * (0.9 + difficulty * 0.02 + wildness * 0.8);
+    const wave = Math.sin(pathState.widthPhase);
+    const noise = randomRange(-0.4 - wildness * 0.2, 0.4 + wildness * 0.2);
+    const variance = clamp(0.25 + difficulty * 0.01 + wildness * 0.15, 0.25, 0.8);
+    const factor = clamp(1 + (wave + noise) * variance, 0.45, 1.45);
+    return Math.max(20, base * factor);
   }
 
   function currentTubeHalfWidth(difficulty) {
@@ -1565,20 +1597,22 @@ function createFollowPathGame() {
   function currentScrollSpeed(difficulty) {
     const base = state.minDim * 0.18;
     const boost = 1 + clamp(difficulty * 0.04, 0, 1.1);
-    return base * boost;
+    pathState.speedPhase += 0.01 + difficulty * 0.0008;
+    const pulse = 1 + Math.sin(pathState.speedPhase) * 0.15;
+    return base * boost * pulse;
   }
 
   function isCursorInside() {
     if (points.length < 2) return false;
-    const halfWidth = currentTubeHalfWidth(totalDifficulty);
     let best = Infinity;
     for (let i = 0; i < points.length - 1; i += 1) {
       const p1 = points[i];
       const p2 = points[i + 1];
       const dist = pointToSegmentDistance(state.player.x, state.player.y, p1.x, p1.y, p2.x, p2.y);
-      if (dist < best) best = dist;
+      const halfWidth = (p1.w + p2.w) * 0.5;
+      if (dist < best) best = dist - halfWidth;
     }
-    return best <= halfWidth;
+    return best <= 0;
   }
 
   function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
@@ -1607,7 +1641,6 @@ function createFollowPathGame() {
     ctx.fillRect(0, 0, state.width, state.height);
 
     if (points.length < 2) return;
-    const halfWidth = currentTubeHalfWidth(difficulty);
     const left = [];
     const right = [];
 
@@ -1619,6 +1652,7 @@ function createFollowPathGame() {
       const len = Math.hypot(dx, dy) || 1;
       const nx = -dy / len;
       const ny = dx / len;
+      const halfWidth = points[i].w;
       left.push({ x: points[i].x + nx * halfWidth, y: points[i].y + ny * halfWidth });
       right.push({ x: points[i].x - nx * halfWidth, y: points[i].y - ny * halfWidth });
     }
