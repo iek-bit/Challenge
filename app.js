@@ -1570,20 +1570,25 @@ function createFollowPathGame() {
 
   function isCursorInside() {
     if (points.length < 2) return false;
-    const y = clamp(state.player.y, points[0].y, points[points.length - 1].y);
-    let idx = 0;
-    for (let i = 0; i < points.length - 1; i += 1) {
-      if (points[i].y <= y && points[i + 1].y >= y) {
-        idx = i;
-        break;
-      }
-    }
-    const p1 = points[idx];
-    const p2 = points[idx + 1];
-    const t = (y - p1.y) / Math.max(p2.y - p1.y, 1);
-    const xAtY = lerp(p1.x, p2.x, t);
     const halfWidth = currentTubeHalfWidth(totalDifficulty);
-    return Math.abs(state.player.x - xAtY) <= halfWidth;
+    let best = Infinity;
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const dist = pointToSegmentDistance(state.player.x, state.player.y, p1.x, p1.y, p2.x, p2.y);
+      if (dist < best) best = dist;
+    }
+    return best <= halfWidth;
+  }
+
+  function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len2 = dx * dx + dy * dy || 1;
+    const t = clamp(((px - x1) * dx + (py - y1) * dy) / len2, 0, 1);
+    const cx = x1 + t * dx;
+    const cy = y1 + t * dy;
+    return Math.hypot(px - cx, py - cy);
   }
 
   function updateBackground() {
