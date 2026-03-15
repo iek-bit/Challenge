@@ -1882,6 +1882,7 @@ function createRacingModeGame() {
   const ctx = gameCanvas.getContext("2d");
   const input = { left: false, right: false };
   const trail = [];
+  const tireMarks = [];
   const renderCache = { left: [], right: [], points: [] };
 
   const state = {
@@ -1898,9 +1899,10 @@ function createRacingModeGame() {
     y: 0,
     heading: -Math.PI / 2,
     velocity: { x: 0, y: 0 },
-    baseSpeed: 320,
-    speed: 320,
-    turnRate: 2.6,
+    baseSpeed: 380,
+    speed: 380,
+    turnRate: 2.8,
+    slipAngle: 0,
     distance: 0,
   };
 
@@ -2058,9 +2060,11 @@ function createRacingModeGame() {
     player.heading = -Math.PI / 2;
     player.speed = player.baseSpeed;
     player.distance = 0;
+    player.slipAngle = 0;
     player.velocity.x = Math.cos(player.heading) * player.speed;
     player.velocity.y = Math.sin(player.heading) * player.speed;
     trail.length = 0;
+    tireMarks.length = 0;
 
     track.segments.length = 0;
     track.obstacles.length = 0;
@@ -2131,17 +2135,23 @@ function createRacingModeGame() {
     state.elapsed += dt;
     state.scoreTime = state.elapsed;
     // Speed scaling: start fast and ramp slightly over time.
-    const speedBoost = Math.min(state.elapsed * 5, 220);
+    const speedBoost = Math.min(state.elapsed * 6, 260);
     player.speed = player.baseSpeed + speedBoost;
 
     const steering = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     player.heading += steering * player.turnRate * dt;
-    // Drift mechanic: velocity lags behind heading when steering hard at speed.
-    const desiredVX = Math.cos(player.heading) * player.speed;
-    const desiredVY = Math.sin(player.heading) * player.speed;
+    // Drift mechanic: slip angle grows with sharp steering at high speed, then eases back.
     const speedRatio = player.speed / player.baseSpeed;
-    const driftStrength = clamp(Math.abs(steering) * (speedRatio - 1) * 0.35, 0, 0.55);
-    const traction = clamp(1 - driftStrength, 0.25, 0.9);
+    const steeringForce = steering * speedRatio;
+    const slipTarget = clamp(steeringForce * 0.45, -0.6, 0.6);
+    player.slipAngle = lerp(player.slipAngle, slipTarget, 0.06 + speedRatio * 0.02);
+    player.slipAngle *= 0.985;
+
+    // Velocity follows the slip angle while the car heading stays authoritative.
+    const velocityAngle = player.heading + player.slipAngle;
+    const desiredVX = Math.cos(velocityAngle) * player.speed;
+    const desiredVY = Math.sin(velocityAngle) * player.speed;
+    const traction = clamp(0.22 + 0.2 / speedRatio, 0.18, 0.38);
     player.velocity.x = lerp(player.velocity.x, desiredVX, traction);
     player.velocity.y = lerp(player.velocity.y, desiredVY, traction);
     const vLen = Math.hypot(player.velocity.x, player.velocity.y) || 1;
@@ -2151,6 +2161,8 @@ function createRacingModeGame() {
     player.x += player.velocity.x * dt;
     player.y += player.velocity.y * dt;
     player.distance += player.speed * dt;
+
+    updateTireMarks(dt);
 
     trail.push({ x: player.x, y: player.y, heading: player.heading });
     if (trail.length > 18) {
@@ -2566,6 +2578,7 @@ function createRacingModeGame() {
 
     buildRenderPaths(points, centerX, centerY);
     drawTrack();
+    drawTireMarks(centerX, centerY);
     drawObstacles(centerX, centerY);
     drawTrail(centerX, centerY);
     drawCar(centerX, centerY);
@@ -2615,6 +2628,38 @@ function createRacingModeGame() {
     ctx.lineWidth = 2;
     drawLine(renderCache.left);
     drawLine(renderCache.right);
+
+    drawCheckers(renderCache.left, true);
+    drawCheckers(renderCache.right, false);
+  }
+
+  function drawCheckers(path, flip) {
+    if (path.length < 6) return;
+    const step = 18;
+    ctx.save();
+    ctx.lineWidth = 4;
+    for (let i = 0; i < path.length - 2; i += 2) {
+      const x1 = path[i];
+      const y1 = path[i + 1];
+      const x2 = path[i + 2];
+      const y2 = path[i + 3];
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len;
+      const uy = dy / len;
+      for (let s = 0; s < len; s += step) {
+        const t = (s / step + (flip ? 1 : 0)) % 2;
+        ctx.strokeStyle = t === 0 ? "#f5f5f5" : "#0b0b0b";
+        const sx = x1 + ux * s;
+        const sy = y1 + uy * s;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(sx + ux * step * 0.6, sy + uy * step * 0.6);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
   }
 
   function drawObstacles(centerX, centerY) {
@@ -2676,6 +2721,57 @@ function createRacingModeGame() {
       ctx.beginPath();
       ctx.moveTo(sx, sy);
       ctx.lineTo(sx + dx, sy + dy);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function updateTireMarks(dt) {
+    const driftAmount = Math.abs(player.slipAngle);
+    const isDrifting = driftAmount > 0.12;
+    if (isDrifting) {
+      const rearOffset = -18;
+      const sideOffset = 8;
+      const heading = player.heading;
+      const nx = -Math.sin(heading);
+      const ny = Math.cos(heading);
+      const rx = Math.cos(heading);
+      const ry = Math.sin(heading);
+      const rearX = player.x + rx * rearOffset;
+      const rearY = player.y + ry * rearOffset;
+      tireMarks.push({
+        x: rearX + nx * sideOffset,
+        y: rearY + ny * sideOffset,
+        age: 0,
+      });
+      tireMarks.push({
+        x: rearX - nx * sideOffset,
+        y: rearY - ny * sideOffset,
+        age: 0,
+      });
+    }
+
+    for (let i = tireMarks.length - 1; i >= 0; i -= 1) {
+      tireMarks[i].age += dt;
+      if (tireMarks[i].age > 1.2) {
+        tireMarks.splice(i, 1);
+      }
+    }
+  }
+
+  function drawTireMarks(centerX, centerY) {
+    if (!tireMarks.length) return;
+    ctx.save();
+    ctx.lineWidth = 3;
+    for (let i = 0; i < tireMarks.length; i += 1) {
+      const mark = tireMarks[i];
+      const alpha = clamp(1 - mark.age / 1.2, 0, 1);
+      ctx.strokeStyle = `rgba(20, 20, 20, ${alpha})`;
+      const sx = centerX + (mark.x - player.x);
+      const sy = centerY + (mark.y - player.y);
+      ctx.beginPath();
+      ctx.moveTo(sx - 4, sy - 2);
+      ctx.lineTo(sx + 4, sy + 2);
       ctx.stroke();
     }
     ctx.restore();
