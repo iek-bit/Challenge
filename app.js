@@ -1403,8 +1403,8 @@ function createFollowPathGame() {
     width: 0,
     height: 0,
     minDim: 0,
-    cursor: { x: 0, y: 0 },
-    cursorReady: false,
+    player: { x: 0, y: 0 },
+    playerReady: false,
     bgColor: "#060708",
   };
 
@@ -1425,7 +1425,8 @@ function createFollowPathGame() {
     state.width = rect.width;
     state.height = rect.height;
     state.minDim = Math.min(rect.width, rect.height);
-    state.cursor.y = state.height * 0.58;
+    state.player.y = state.height * 0.58;
+    state.player.x = state.width * 0.5;
   }
 
   function start() {
@@ -1435,7 +1436,7 @@ function createFollowPathGame() {
     health = 100;
     started = false;
     totalDifficulty = 0;
-    state.cursorReady = false;
+    state.playerReady = false;
     resize();
     window.addEventListener("resize", resize);
     window.addEventListener("pointermove", handlePointer);
@@ -1456,8 +1457,8 @@ function createFollowPathGame() {
 
   function handlePointer(event) {
     const rect = gameCanvas.getBoundingClientRect();
-    state.cursor.x = clamp(event.clientX - rect.left, 0, state.width);
-    state.cursorReady = true;
+    state.player.x = clamp(event.clientX - rect.left, 0, state.width);
+    state.playerReady = true;
   }
 
   function initPath() {
@@ -1481,14 +1482,14 @@ function createFollowPathGame() {
     const difficulty = started ? updateDifficulty(dt) : 0;
     updatePath(dt, difficulty);
     const inside = isCursorInside();
-    if (!started && state.cursorReady && inside) {
+    if (!started && state.playerReady && inside) {
       started = true;
       elapsed = 0;
     }
 
     if (started) {
       elapsed += dt;
-      if (state.cursorReady && !inside) {
+      if (!inside) {
         health = Math.max(0, health - drainRate * dt);
         if (health <= 0) {
           const scoreText = scoreReadout.textContent;
@@ -1568,8 +1569,8 @@ function createFollowPathGame() {
   }
 
   function isCursorInside() {
-    if (!state.cursorReady || points.length < 2) return false;
-    const y = clamp(state.cursor.y, points[0].y, points[points.length - 1].y);
+    if (points.length < 2) return false;
+    const y = clamp(state.player.y, points[0].y, points[points.length - 1].y);
     let idx = 0;
     for (let i = 0; i < points.length - 1; i += 1) {
       if (points[i].y <= y && points[i + 1].y >= y) {
@@ -1582,7 +1583,7 @@ function createFollowPathGame() {
     const t = (y - p1.y) / Math.max(p2.y - p1.y, 1);
     const xAtY = lerp(p1.x, p2.x, t);
     const halfWidth = currentTubeHalfWidth(totalDifficulty);
-    return Math.abs(state.cursor.x - xAtY) <= halfWidth;
+    return Math.abs(state.player.x - xAtY) <= halfWidth;
   }
 
   function updateBackground() {
@@ -1640,9 +1641,9 @@ function createFollowPathGame() {
     }
     ctx.stroke();
 
-    if (state.cursorReady) {
+    if (state.playerReady) {
       ctx.beginPath();
-      ctx.arc(state.cursor.x, state.cursor.y, 6, 0, Math.PI * 2);
+      ctx.arc(state.player.x, state.player.y, 6, 0, Math.PI * 2);
       ctx.fillStyle = "rgba(226, 74, 74, 0.95)";
       ctx.fill();
       ctx.strokeStyle = "rgba(226, 74, 74, 0.95)";
