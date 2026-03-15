@@ -1425,6 +1425,7 @@ function createFollowPathGame() {
     state.width = rect.width;
     state.height = rect.height;
     state.minDim = Math.min(rect.width, rect.height);
+    state.cursor.y = state.height * 0.58;
   }
 
   function start() {
@@ -1455,8 +1456,7 @@ function createFollowPathGame() {
 
   function handlePointer(event) {
     const rect = gameCanvas.getBoundingClientRect();
-    state.cursor.x = event.clientX - rect.left;
-    state.cursor.y = event.clientY - rect.top;
+    state.cursor.x = clamp(event.clientX - rect.left, 0, state.width);
     state.cursorReady = true;
   }
 
@@ -1640,6 +1640,16 @@ function createFollowPathGame() {
       ctx.lineTo(points[i].x, points[i].y);
     }
     ctx.stroke();
+
+    if (state.cursorReady) {
+      ctx.beginPath();
+      ctx.arc(state.cursor.x, state.cursor.y, 6, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(138, 182, 166, 0.95)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(138, 182, 166, 0.95)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
   }
 
   return { start, stop };
