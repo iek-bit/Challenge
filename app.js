@@ -41,6 +41,8 @@ const gameRegistry = {
     description: "Stay within a moving corridor.",
     tags: ["Control"],
     icon: "path",
+    createGame: () => createFollowPathGame(),
+    createPreview: () => createFollowPathPreview(),
     infoText: "Guide the cursor through a moving corridor without leaving it.",
   },
   "dodge-field": {
@@ -1380,6 +1382,401 @@ function createTimingBarGame() {
   }
 
   return { start, stop };
+}
+
+function createFollowPathGame() {
+  let running = false;
+  let animationId = null;
+  let lastTime = 0;
+  let elapsed = 0;
+  let health = 100;
+  let started = false;
+  let totalDifficulty = 0;
+
+  const ctx = gameCanvas.getContext("2d");
+  const points = [];
+  const segmentHeight = 24;
+  const margin = 80;
+  const drainRate = 40;
+
+  const state = {
+    width: 0,
+    height: 0,
+    minDim: 0,
+    cursor: { x: 0, y: 0 },
+    cursorReady: false,
+    bgColor: "#060708",
+  };
+
+  const pathState = {
+    targetX: 0,
+    turnTimer: 0,
+    oscPhase: 0,
+  };
+
+  function resize() {
+    const rect = gameScreen.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    gameCanvas.width = rect.width * dpr;
+    gameCanvas.height = rect.height * dpr;
+    gameCanvas.style.width = `${rect.width}px`;
+    gameCanvas.style.height = `${rect.height}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    state.width = rect.width;
+    state.height = rect.height;
+    state.minDim = Math.min(rect.width, rect.height);
+  }
+
+  function start() {
+    missedReadout.classList.remove("is-collapsed");
+    heartsReadout.classList.add("is-hidden");
+    elapsed = 0;
+    health = 100;
+    started = false;
+    totalDifficulty = 0;
+    state.cursorReady = false;
+    resize();
+    window.addEventListener("resize", resize);
+    window.addEventListener("pointermove", handlePointer);
+    initPath();
+    running = true;
+    lastTime = performance.now();
+    loop(lastTime);
+  }
+
+  function stop() {
+    running = false;
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+    }
+    window.removeEventListener("resize", resize);
+    window.removeEventListener("pointermove", handlePointer);
+  }
+
+  function handlePointer(event) {
+    const rect = gameCanvas.getBoundingClientRect();
+    state.cursor.x = event.clientX - rect.left;
+    state.cursor.y = event.clientY - rect.top;
+    state.cursorReady = true;
+  }
+
+  function initPath() {
+    points.length = 0;
+    const midX = state.width / 2;
+    const top = -margin;
+    const bottom = state.height + margin;
+    for (let y = top; y <= bottom; y += segmentHeight) {
+      points.push({ x: midX, y });
+    }
+    pathState.targetX = midX;
+    pathState.turnTimer = 0.6;
+    pathState.oscPhase = Math.random() * Math.PI * 2;
+  }
+
+  function loop(now) {
+    if (!running) return;
+    const dt = Math.min((now - lastTime) / 1000, 0.033);
+    lastTime = now;
+
+    const inside = isCursorInside();
+    if (!started && state.cursorReady && inside) {
+      started = true;
+      elapsed = 0;
+    }
+
+    const difficulty = started ? updateDifficulty(dt) : 0;
+    updatePath(dt, difficulty);
+
+    if (started) {
+      elapsed += dt;
+      if (state.cursorReady && !inside) {
+        health = Math.max(0, health - drainRate * dt);
+        if (health <= 0) {
+          const scoreText = scoreReadout.textContent;
+          GameController.gameOverScreen(scoreText);
+          return;
+        }
+      }
+    }
+
+    updateBackground();
+    updateHud();
+    render(difficulty);
+
+    if (running) {
+      animationId = requestAnimationFrame(loop);
+    }
+  }
+
+  function updateDifficulty(dt) {
+    const rate = 0.2 + elapsed * 0.01;
+    totalDifficulty += dt * rate;
+    return totalDifficulty;
+  }
+
+  function updatePath(dt, difficulty) {
+    const scrollSpeed = currentScrollSpeed(difficulty);
+    const deltaY = scrollSpeed * dt;
+    points.forEach((point) => {
+      point.y += deltaY;
+    });
+
+    while (points.length > 0 && points[points.length - 1].y > state.height + margin) {
+      points.pop();
+    }
+
+    const topLimit = -margin;
+    while (points.length === 0 || points[0].y > topLimit) {
+      const nextY = points.length === 0 ? topLimit : points[0].y - segmentHeight;
+      const nextX = generateNextX(difficulty, scrollSpeed);
+      points.unshift({ x: nextX, y: nextY });
+    }
+  }
+
+  function generateNextX(difficulty, scrollSpeed) {
+    const complexity = clamp(difficulty * 0.6, 0, 24);
+    const intervalMin = lerp(0.25, 0.8, 1 - clamp(complexity / 18, 0, 1));
+    const intervalMax = lerp(0.5, 1.4, 1 - clamp(complexity / 18, 0, 1));
+    const maxDelta = lerp(18, 72, clamp(complexity / 24, 0, 1));
+    const oscAmp = lerp(0.08, 0.22, clamp(complexity / 24, 0, 1));
+
+    const dtSegment = segmentHeight / Math.max(scrollSpeed, 1);
+    pathState.turnTimer -= dtSegment;
+    if (pathState.turnTimer <= 0) {
+      const marginX = currentTubeHalfWidth(difficulty) + 24;
+      pathState.targetX = randomRange(marginX, state.width - marginX);
+      pathState.turnTimer = randomRange(intervalMin, intervalMax);
+    }
+
+    const lastX = points.length > 0 ? points[0].x : state.width / 2;
+    const delta = clamp(pathState.targetX - lastX, -maxDelta, maxDelta);
+    pathState.oscPhase += dtSegment * (1.6 + complexity * 0.08);
+    const oscillation = Math.sin(pathState.oscPhase) * oscAmp * state.width;
+    const nextX = clamp(lastX + delta * 0.35 + oscillation, 20, state.width - 20);
+    return nextX;
+  }
+
+  function currentTubeHalfWidth(difficulty) {
+    const base = state.minDim * 0.12;
+    const shrink = clamp(difficulty * 0.02, 0, 0.4);
+    return Math.max(24, base * (1 - shrink));
+  }
+
+  function currentScrollSpeed(difficulty) {
+    const base = state.minDim * 0.18;
+    const boost = 1 + clamp(difficulty * 0.04, 0, 1.1);
+    return base * boost;
+  }
+
+  function isCursorInside() {
+    if (!state.cursorReady || points.length < 2) return false;
+    const y = clamp(state.cursor.y, points[0].y, points[points.length - 1].y);
+    let idx = 0;
+    for (let i = 0; i < points.length - 1; i += 1) {
+      if (points[i].y <= y && points[i + 1].y >= y) {
+        idx = i;
+        break;
+      }
+    }
+    const p1 = points[idx];
+    const p2 = points[idx + 1];
+    const t = (y - p1.y) / Math.max(p2.y - p1.y, 1);
+    const xAtY = lerp(p1.x, p2.x, t);
+    const halfWidth = currentTubeHalfWidth(totalDifficulty);
+    return Math.abs(state.cursor.x - xAtY) <= halfWidth;
+  }
+
+  function updateBackground() {
+    state.bgColor = "#060708";
+  }
+
+  function updateHud() {
+    const score = started ? elapsed * 100 : 0;
+    scoreReadout.textContent = score.toFixed(2).padStart(7, "0");
+    missedReadout.textContent = `Health ${Math.ceil(health)}%`;
+  }
+
+  function render(difficulty) {
+    ctx.clearRect(0, 0, state.width, state.height);
+    ctx.fillStyle = state.bgColor;
+    ctx.fillRect(0, 0, state.width, state.height);
+
+    if (points.length < 2) return;
+    const halfWidth = currentTubeHalfWidth(difficulty);
+    const left = [];
+    const right = [];
+
+    for (let i = 0; i < points.length; i += 1) {
+      const prev = points[i - 1] || points[i];
+      const next = points[i + 1] || points[i];
+      const dx = next.x - prev.x;
+      const dy = next.y - prev.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len;
+      const ny = dx / len;
+      left.push({ x: points[i].x + nx * halfWidth, y: points[i].y + ny * halfWidth });
+      right.push({ x: points[i].x - nx * halfWidth, y: points[i].y - ny * halfWidth });
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(left[0].x, left[0].y);
+    for (let i = 1; i < left.length; i += 1) {
+      ctx.lineTo(left[i].x, left[i].y);
+    }
+    for (let i = right.length - 1; i >= 0; i -= 1) {
+      ctx.lineTo(right[i].x, right[i].y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = "rgba(138, 182, 166, 0.16)";
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(231, 237, 244, 0.6)";
+    ctx.lineWidth = 2;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i += 1) {
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    ctx.stroke();
+  }
+
+  return { start, stop };
+}
+
+function createFollowPathPreview(canvas = infoCanvas) {
+  let running = false;
+  let animationId = null;
+  let lastTime = 0;
+  const ctx = canvas.getContext("2d");
+  const points = [];
+  const segmentHeight = 20;
+  const margin = 40;
+  const preview = {
+    width: 0,
+    height: 0,
+  };
+
+  const pathState = {
+    targetX: 0,
+    turnTimer: 0,
+    oscPhase: Math.random() * Math.PI * 2,
+  };
+
+  function renderStatic() {
+    preview.width = canvas.width;
+    preview.height = canvas.height;
+    initPath();
+    render();
+  }
+
+  function start() {
+    renderStatic();
+    running = true;
+    lastTime = performance.now();
+    loop(lastTime);
+  }
+
+  function stop() {
+    running = false;
+    if (animationId) cancelAnimationFrame(animationId);
+  }
+
+  function initPath() {
+    points.length = 0;
+    const midX = preview.width / 2;
+    for (let y = -margin; y <= preview.height + margin; y += segmentHeight) {
+      points.push({ x: midX, y });
+    }
+    pathState.targetX = midX;
+    pathState.turnTimer = 0.7;
+  }
+
+  function loop(now) {
+    if (!running) return;
+    const dt = Math.min((now - lastTime) / 1000, 0.033);
+    lastTime = now;
+    updatePath(dt);
+    render();
+    animationId = requestAnimationFrame(loop);
+  }
+
+  function updatePath(dt) {
+    const speed = Math.min(preview.height * 0.35, 140);
+    const deltaY = speed * dt;
+    points.forEach((point) => {
+      point.y += deltaY;
+    });
+    while (points.length > 0 && points[points.length - 1].y > preview.height + margin) {
+      points.pop();
+    }
+    while (points.length === 0 || points[0].y > -margin) {
+      const nextY = points.length === 0 ? -margin : points[0].y - segmentHeight;
+      const nextX = generateNextX(speed);
+      points.unshift({ x: nextX, y: nextY });
+    }
+  }
+
+  function generateNextX(speed) {
+    const dtSegment = segmentHeight / Math.max(speed, 1);
+    pathState.turnTimer -= dtSegment;
+    if (pathState.turnTimer <= 0) {
+      pathState.targetX = randomRange(30, preview.width - 30);
+      pathState.turnTimer = randomRange(0.45, 1.0);
+    }
+    pathState.oscPhase += dtSegment * 1.6;
+    const osc = Math.sin(pathState.oscPhase) * preview.width * 0.12;
+    const lastX = points.length > 0 ? points[0].x : preview.width / 2;
+    const delta = clamp(pathState.targetX - lastX, -32, 32);
+    return clamp(lastX + delta * 0.35 + osc, 18, preview.width - 18);
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, preview.width, preview.height);
+    ctx.fillStyle = "#060708";
+    ctx.fillRect(0, 0, preview.width, preview.height);
+    if (points.length < 2) return;
+    const halfWidth = 18;
+    const left = [];
+    const right = [];
+    for (let i = 0; i < points.length; i += 1) {
+      const prev = points[i - 1] || points[i];
+      const next = points[i + 1] || points[i];
+      const dx = next.x - prev.x;
+      const dy = next.y - prev.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len;
+      const ny = dx / len;
+      left.push({ x: points[i].x + nx * halfWidth, y: points[i].y + ny * halfWidth });
+      right.push({ x: points[i].x - nx * halfWidth, y: points[i].y - ny * halfWidth });
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(left[0].x, left[0].y);
+    for (let i = 1; i < left.length; i += 1) {
+      ctx.lineTo(left[i].x, left[i].y);
+    }
+    for (let i = right.length - 1; i >= 0; i -= 1) {
+      ctx.lineTo(right[i].x, right[i].y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = "rgba(138, 182, 166, 0.2)";
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(231, 237, 244, 0.6)";
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i += 1) {
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    ctx.stroke();
+  }
+
+  return { start, stop, renderStatic };
 }
 
 function createMouseCirclePreview(canvas = infoCanvas) {
