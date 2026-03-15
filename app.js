@@ -3,7 +3,7 @@ const TAGS = ["Skill", "Speed", "Control"];
 const gameRegistry = {
   "racing-mode": {
     title: "Racing Mode",
-    description: "Survive an endless procedurally generated track.",
+    description: "Try to beat your best time on challenging tracks",
     tags: ["Speed", "Control"],
     icon: "racing",
     // Racing Mode now launches an iframe; the previous canvas game code was removed.
