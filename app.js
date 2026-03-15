@@ -298,29 +298,57 @@ function setupGameCards() {
 function insertRacingIframe(button) {
   // The old Racing Mode canvas game code was removed from this file in favor of an iframe embed.
   // Prevent duplicate iframes if the Racing Mode button is clicked multiple times.
-  if (document.getElementById("racingIframeTile")) return;
+  if (document.getElementById("racingIframeOverlay")) return;
 
-  const tile = document.createElement("div");
-  tile.id = "racingIframeTile";
-  tile.style.width = "500px";
-  tile.style.height = "400px";
-  tile.style.border = "2px solid #fff";
-  tile.style.borderRadius = "14px";
-  tile.style.overflow = "hidden";
-  tile.style.marginTop = "16px";
+  const overlay = document.createElement("div");
+  overlay.id = "racingIframeOverlay";
+  overlay.style.position = "fixed";
+  overlay.style.inset = "0";
+  overlay.style.zIndex = "40";
+  overlay.style.background = "rgba(6, 7, 8, 0.92)";
+  overlay.style.display = "grid";
+  overlay.style.placeItems = "center";
+
+  const frameWrap = document.createElement("div");
+  frameWrap.style.width = "100%";
+  frameWrap.style.height = "100%";
+  frameWrap.style.border = "2px solid #fff";
+  frameWrap.style.overflow = "hidden";
 
   const iframe = document.createElement("iframe");
   iframe.src = "https://vectorgp.run/";
   iframe.title = "Racing Mode";
-  iframe.width = "500";
-  iframe.height = "400";
+  iframe.style.width = "100%";
+  iframe.style.height = "100%";
   iframe.style.border = "0";
   iframe.setAttribute("loading", "lazy");
 
-  tile.appendChild(iframe);
+  const exit = document.createElement("button");
+  exit.type = "button";
+  exit.textContent = "Exit";
+  exit.style.position = "absolute";
+  exit.style.top = "18px";
+  exit.style.right = "18px";
+  exit.style.border = "1px solid rgba(226, 230, 234, 0.2)";
+  exit.style.background = "rgba(6, 7, 8, 0.85)";
+  exit.style.color = "#e2e6ea";
+  exit.style.padding = "10px 18px";
+  exit.style.borderRadius = "999px";
+  exit.style.cursor = "pointer";
+  exit.style.textTransform = "uppercase";
+  exit.style.letterSpacing = "0.12em";
+  exit.style.fontSize = "12px";
 
-  // Insert the iframe tile directly below the Racing Mode button/card.
-  button.insertAdjacentElement("afterend", tile);
+  exit.addEventListener("click", () => {
+    overlay.remove();
+  });
+
+  frameWrap.appendChild(iframe);
+  overlay.appendChild(frameWrap);
+  overlay.appendChild(exit);
+
+  // Insert fullscreen overlay into the page.
+  document.body.appendChild(overlay);
 }
 
 const GamePreviewController = (() => {
