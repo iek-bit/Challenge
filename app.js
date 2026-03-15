@@ -1478,14 +1478,13 @@ function createFollowPathGame() {
     const dt = Math.min((now - lastTime) / 1000, 0.033);
     lastTime = now;
 
+    const difficulty = started ? updateDifficulty(dt) : 0;
+    updatePath(dt, difficulty);
     const inside = isCursorInside();
     if (!started && state.cursorReady && inside) {
       started = true;
       elapsed = 0;
     }
-
-    const difficulty = started ? updateDifficulty(dt) : 0;
-    updatePath(dt, difficulty);
 
     if (started) {
       elapsed += dt;
@@ -1644,9 +1643,9 @@ function createFollowPathGame() {
     if (state.cursorReady) {
       ctx.beginPath();
       ctx.arc(state.cursor.x, state.cursor.y, 6, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(138, 182, 166, 0.95)";
+      ctx.fillStyle = "rgba(226, 74, 74, 0.95)";
       ctx.fill();
-      ctx.strokeStyle = "rgba(138, 182, 166, 0.95)";
+      ctx.strokeStyle = "rgba(226, 74, 74, 0.95)";
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
