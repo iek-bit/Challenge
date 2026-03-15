@@ -1608,9 +1608,10 @@ function createFollowPathGame() {
     for (let i = 0; i < points.length - 1; i += 1) {
       const p1 = points[i];
       const p2 = points[i + 1];
-      const dist = pointToSegmentDistance(state.player.x, state.player.y, p1.x, p1.y, p2.x, p2.y);
-      const halfWidth = (p1.w + p2.w) * 0.5;
-      if (dist < best) best = dist - halfWidth;
+      const { distance, t } = pointToSegmentDistance(state.player.x, state.player.y, p1.x, p1.y, p2.x, p2.y);
+      const halfWidth = lerp(p1.w, p2.w, t);
+      const edgeDistance = distance - halfWidth;
+      if (edgeDistance < best) best = edgeDistance;
     }
     return best <= 0;
   }
@@ -1622,7 +1623,7 @@ function createFollowPathGame() {
     const t = clamp(((px - x1) * dx + (py - y1) * dy) / len2, 0, 1);
     const cx = x1 + t * dx;
     const cy = y1 + t * dy;
-    return Math.hypot(px - cx, py - cy);
+    return { distance: Math.hypot(px - cx, py - cy), t };
   }
 
   function updateBackground() {
