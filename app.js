@@ -1897,9 +1897,10 @@ function createRacingModeGame() {
     x: 0,
     y: 0,
     heading: -Math.PI / 2,
-    baseSpeed: 260,
-    speed: 260,
-    turnRate: 2.4,
+    velocity: { x: 0, y: 0 },
+    baseSpeed: 320,
+    speed: 320,
+    turnRate: 2.6,
     distance: 0,
   };
 
@@ -1913,6 +1914,7 @@ function createRacingModeGame() {
     step: 24,
     segments: [],
     obstacles: [],
+    lines: [],
     pending: [],
     cooldown: 0,
     lastType: "straight",
@@ -2056,10 +2058,13 @@ function createRacingModeGame() {
     player.heading = -Math.PI / 2;
     player.speed = player.baseSpeed;
     player.distance = 0;
+    player.velocity.x = Math.cos(player.heading) * player.speed;
+    player.velocity.y = Math.sin(player.heading) * player.speed;
     trail.length = 0;
 
     track.segments.length = 0;
     track.obstacles.length = 0;
+    track.lines.length = 0;
     track.pending.length = 0;
     track.cooldown = 0;
     track.lastType = "straight";
@@ -2125,13 +2130,26 @@ function createRacingModeGame() {
   function update(dt) {
     state.elapsed += dt;
     state.scoreTime = state.elapsed;
-    const speedBoost = Math.min(state.elapsed * 4, 160);
+    // Speed scaling: start fast and ramp slightly over time.
+    const speedBoost = Math.min(state.elapsed * 5, 220);
     player.speed = player.baseSpeed + speedBoost;
 
     const steering = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     player.heading += steering * player.turnRate * dt;
-    player.x += Math.cos(player.heading) * player.speed * dt;
-    player.y += Math.sin(player.heading) * player.speed * dt;
+    // Drift mechanic: velocity lags behind heading when steering hard at speed.
+    const desiredVX = Math.cos(player.heading) * player.speed;
+    const desiredVY = Math.sin(player.heading) * player.speed;
+    const speedRatio = player.speed / player.baseSpeed;
+    const driftStrength = clamp(Math.abs(steering) * (speedRatio - 1) * 0.35, 0, 0.55);
+    const traction = clamp(1 - driftStrength, 0.25, 0.9);
+    player.velocity.x = lerp(player.velocity.x, desiredVX, traction);
+    player.velocity.y = lerp(player.velocity.y, desiredVY, traction);
+    const vLen = Math.hypot(player.velocity.x, player.velocity.y) || 1;
+    player.velocity.x = (player.velocity.x / vLen) * player.speed;
+    player.velocity.y = (player.velocity.y / vLen) * player.speed;
+
+    player.x += player.velocity.x * dt;
+    player.y += player.velocity.y * dt;
     player.distance += player.speed * dt;
 
     trail.push({ x: player.x, y: player.y, heading: player.heading });
@@ -2164,17 +2182,73 @@ function createRacingModeGame() {
       track.segments.shift();
     }
     pruneObstacles(pruneBefore);
+    pruneLines(pruneBefore);
   }
 
   function addSegment() {
-    const plan = nextPlannedSegment();
+    // Track intersection checks: reject segments that would cross earlier ones.
+    const maxAttempts = 12;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const plan = nextPlannedSegment();
+      const length = plan.length;
+      const widthStart = plan.widthStart;
+      const widthEnd = plan.widthEnd;
+
+      // Smooth the heading change between segments.
+      const nextTurn = lerp(track.currentTurn, plan.turn, 0.55);
+      const deltaHeading = nextTurn;
+      const steps = Math.max(6, Math.ceil(length / track.step));
+      let x = track.lastPos.x;
+      let y = track.lastPos.y;
+      const heading = track.lastHeading;
+      let s = track.totalLength;
+      const points = [{ x, y, heading, s, width: widthStart }];
+
+      for (let i = 1; i <= steps; i += 1) {
+        const t = i / steps;
+        const stepHeading = heading + deltaHeading * t;
+        const width = lerp(widthStart, widthEnd, t);
+        const stepLen = length / steps;
+        x += Math.cos(stepHeading) * stepLen;
+        y += Math.sin(stepHeading) * stepLen;
+        s += stepLen;
+        points.push({ x, y, heading: stepHeading, s, width });
+      }
+
+      if (segmentIntersectsTrack(points)) {
+        continue;
+      }
+
+      track.currentTurn = nextTurn;
+      track.lastPos = { x, y };
+      track.lastHeading = heading + deltaHeading;
+      track.totalLength = s;
+      track.currentWidth = widthEnd;
+
+      const segment = {
+        points,
+        startS: points[0].s,
+        endS: s,
+        type: plan.type,
+      };
+      track.segments.push(segment);
+      track.lastType = plan.type;
+      addLinesFromPoints(points);
+
+      if (plan.obstacleCount > 0) {
+        spawnObstacles(segment, plan.obstacleCount);
+      }
+      return;
+    }
+    // Fallback: if all attempts fail, add a short straight to avoid stalling generation.
+    const fallback = makePlan("straight", 0, 160, track.currentWidth);
+    forceSegment(fallback);
+  }
+
+  function forceSegment(plan) {
     const length = plan.length;
     const widthStart = plan.widthStart;
     const widthEnd = plan.widthEnd;
-
-    // Smooth the heading change between segments.
-    track.currentTurn = lerp(track.currentTurn, plan.turn, 0.55);
-    const deltaHeading = track.currentTurn;
     const steps = Math.max(6, Math.ceil(length / track.step));
     let x = track.lastPos.x;
     let y = track.lastPos.y;
@@ -2184,20 +2258,17 @@ function createRacingModeGame() {
 
     for (let i = 1; i <= steps; i += 1) {
       const t = i / steps;
-      const stepHeading = heading + deltaHeading * t;
       const width = lerp(widthStart, widthEnd, t);
       const stepLen = length / steps;
-      x += Math.cos(stepHeading) * stepLen;
-      y += Math.sin(stepHeading) * stepLen;
+      x += Math.cos(heading) * stepLen;
+      y += Math.sin(heading) * stepLen;
       s += stepLen;
-      points.push({ x, y, heading: stepHeading, s, width });
+      points.push({ x, y, heading, s, width });
     }
 
     track.lastPos = { x, y };
-    track.lastHeading = heading + deltaHeading;
     track.totalLength = s;
     track.currentWidth = widthEnd;
-
     const segment = {
       points,
       startS: points[0].s,
@@ -2206,10 +2277,7 @@ function createRacingModeGame() {
     };
     track.segments.push(segment);
     track.lastType = plan.type;
-
-    if (plan.obstacleCount > 0) {
-      spawnObstacles(segment, plan.obstacleCount);
-    }
+    addLinesFromPoints(points);
   }
 
   // Segment types:
@@ -2387,6 +2455,75 @@ function createRacingModeGame() {
       }
     }
     return false;
+  }
+
+  function addLinesFromPoints(points) {
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const a = points[i];
+      const b = points[i + 1];
+      track.lines.push({
+        ax: a.x,
+        ay: a.y,
+        bx: b.x,
+        by: b.y,
+        s0: a.s,
+        s1: b.s,
+      });
+    }
+  }
+
+  function pruneLines(pruneBefore) {
+    for (let i = track.lines.length - 1; i >= 0; i -= 1) {
+      if (track.lines[i].s1 < pruneBefore) {
+        track.lines.splice(i, 1);
+      }
+    }
+  }
+
+  function segmentIntersectsTrack(points) {
+    if (track.lines.length < 8) return false;
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const a = points[i];
+      const b = points[i + 1];
+      for (let j = 0; j < track.lines.length; j += 1) {
+        const line = track.lines[j];
+        // Skip lines that are too close in sequence to avoid false positives.
+        if (Math.abs(a.s - line.s1) < 40) continue;
+        if (segmentsIntersect(a.x, a.y, b.x, b.y, line.ax, line.ay, line.bx, line.by)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+    const ab = orient(ax, ay, bx, by, cx, cy);
+    const ab2 = orient(ax, ay, bx, by, dx, dy);
+    const cd = orient(cx, cy, dx, dy, ax, ay);
+    const cd2 = orient(cx, cy, dx, dy, bx, by);
+
+    if (ab === 0 && onSegment(ax, ay, bx, by, cx, cy)) return true;
+    if (ab2 === 0 && onSegment(ax, ay, bx, by, dx, dy)) return true;
+    if (cd === 0 && onSegment(cx, cy, dx, dy, ax, ay)) return true;
+    if (cd2 === 0 && onSegment(cx, cy, dx, dy, bx, by)) return true;
+
+    return ab * ab2 < 0 && cd * cd2 < 0;
+  }
+
+  function orient(ax, ay, bx, by, cx, cy) {
+    const value = (by - ay) * (cx - bx) - (bx - ax) * (cy - by);
+    if (Math.abs(value) < 0.00001) return 0;
+    return value > 0 ? 1 : -1;
+  }
+
+  function onSegment(ax, ay, bx, by, px, py) {
+    return (
+      Math.min(ax, bx) - 0.001 <= px &&
+      px <= Math.max(ax, bx) + 0.001 &&
+      Math.min(ay, by) - 0.001 <= py &&
+      py <= Math.max(ay, by) + 0.001
+    );
   }
 
   function updateHud() {
