@@ -314,7 +314,6 @@ function insertRacingIframe(button) {
   const frameWrap = document.createElement("div");
   frameWrap.style.width = "100%";
   frameWrap.style.height = "100%";
-  frameWrap.style.border = "2px solid #fff";
   frameWrap.style.overflow = "hidden";
 
   const iframe = document.createElement("iframe");
