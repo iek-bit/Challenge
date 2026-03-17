@@ -410,7 +410,6 @@ function createBlockTowerGame() {
   let moduleRef = null;
   let started = false;
   let previousHudDisplay = "";
-  let exitButton = null;
 
   function start() {
     const hud = document.querySelector(".game-hud");
@@ -420,36 +419,11 @@ function createBlockTowerGame() {
     }
     missedReadout.classList.add("is-collapsed");
     heartsReadout.classList.add("is-hidden");
-    exitButton = document.createElement("button");
-    exitButton.type = "button";
-    exitButton.textContent = "Exit";
-    exitButton.style.position = "absolute";
-    exitButton.style.top = "18px";
-    exitButton.style.right = "18px";
-    exitButton.style.border = "1px solid rgba(226, 230, 234, 0.2)";
-    exitButton.style.background = "rgba(6, 7, 8, 0.85)";
-    exitButton.style.color = "#e2e6ea";
-    exitButton.style.padding = "10px 18px";
-    exitButton.style.borderRadius = "999px";
-    exitButton.style.cursor = "pointer";
-    exitButton.style.textTransform = "uppercase";
-    exitButton.style.letterSpacing = "0.12em";
-    exitButton.style.fontSize = "12px";
-    exitButton.addEventListener("click", () => {
-      GameController.stop();
-    });
-    gameScreen.appendChild(exitButton);
     import("./blockTower.js").then((mod) => {
       moduleRef = mod;
       started = true;
-      moduleRef.start(gameCanvas, {
-        onExit: () => {
-          GameController.stop();
-        },
-        onScore: (scoreValue) => {
-          setHighScore("block-tower", scoreValue);
-          updateCardHighScore("block-tower");
-        },
+      moduleRef.start(gameCanvas, () => {
+        GameController.stop();
       });
     });
   }
@@ -457,10 +431,6 @@ function createBlockTowerGame() {
   function stop() {
     if (moduleRef && started) {
       moduleRef.stop();
-    }
-    if (exitButton) {
-      exitButton.remove();
-      exitButton = null;
     }
     const hud = document.querySelector(".game-hud");
     if (hud) {
