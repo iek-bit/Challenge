@@ -79,6 +79,23 @@ const heartsReadout = document.getElementById("heartsReadout");
 
 document.body.classList.add("home-active");
 
+const HIGHSCORE_PREFIX = "challenge_highscore_";
+
+function getHighScore(gameId) {
+  const raw = window.localStorage.getItem(`${HIGHSCORE_PREFIX}${gameId}`);
+  if (!raw) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+function setHighScore(gameId, scoreValue) {
+  if (!Number.isFinite(scoreValue)) return;
+  const existing = getHighScore(gameId);
+  if (existing === null || scoreValue > existing) {
+    window.localStorage.setItem(`${HIGHSCORE_PREFIX}${gameId}`, String(scoreValue));
+  }
+}
+
 const iconFactory = {
   circle: () => `
     <svg class="game-icon" viewBox="0 0 120 120" fill="none" stroke-width="2">
@@ -175,6 +192,11 @@ function buildGameSections() {
       const desc = document.createElement("p");
       desc.textContent = game.description;
 
+      const highscore = document.createElement("div");
+      highscore.className = "game-highscore";
+      const storedScore = getHighScore(gameId);
+      highscore.textContent = storedScore === null ? "High: --" : `High: ${formatHighScore(storedScore)}`;
+
       card.innerHTML = iconFactory[game.icon]?.() ?? "";
       card.appendChild(previewCanvas);
       const icon = card.querySelector(".game-icon");
@@ -184,6 +206,7 @@ function buildGameSections() {
       card.appendChild(chip);
       card.appendChild(title);
       card.appendChild(desc);
+      card.appendChild(highscore);
 
       grid.appendChild(card);
 
@@ -229,6 +252,7 @@ function setupNavigation() {
 
 const GameController = (() => {
   let currentGame = null;
+  let currentGameId = null;
 
   function showView(view) {
     const views = [homeScreen, selectScreen, gameScreen];
@@ -256,6 +280,7 @@ const GameController = (() => {
     gameOver.classList.add("is-hidden");
     heartsReadout.classList.add("is-hidden");
     document.body.classList.add("game-active");
+    currentGameId = gameId;
     currentGame = gameConfig.createGame();
     currentGame.start();
   }
@@ -265,16 +290,23 @@ const GameController = (() => {
       currentGame.stop();
       currentGame = null;
     }
+    currentGameId = null;
     document.body.classList.remove("game-active");
     showView(selectScreen);
     gameOver.classList.add("is-hidden");
   }
 
   function gameOverScreen(scoreText) {
+    if (currentGameId) {
+      const parsedScore = parseScoreValue(scoreText);
+      setHighScore(currentGameId, parsedScore);
+      updateCardHighScore(currentGameId);
+    }
     if (currentGame) {
       currentGame.stop();
       currentGame = null;
     }
+    currentGameId = null;
     gameOverScore.textContent = `Score ${scoreText}`;
     gameOver.classList.remove("is-hidden");
     document.body.classList.remove("game-active");
@@ -350,6 +382,26 @@ function insertRacingIframe(button) {
 
   // Insert fullscreen overlay into the page.
   document.body.appendChild(overlay);
+}
+
+function parseScoreValue(scoreText) {
+  if (typeof scoreText === "number") return scoreText;
+  const cleaned = String(scoreText).replace(/[^0-9.]/g, "");
+  const value = Number.parseFloat(cleaned);
+  return Number.isFinite(value) ? value : NaN;
+}
+
+function formatHighScore(value) {
+  return Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "--";
+}
+
+function updateCardHighScore(gameId) {
+  const card = document.querySelector(`.game-card[data-game-id="${gameId}"]`);
+  if (!card) return;
+  const label = card.querySelector(".game-highscore");
+  if (!label) return;
+  const storedScore = getHighScore(gameId);
+  label.textContent = storedScore === null ? "High: --" : `High: ${formatHighScore(storedScore)}`;
 }
 
 const GamePreviewController = (() => {
