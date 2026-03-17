@@ -34,7 +34,7 @@ const gameRegistry = {
     icon: "timing",
     createGame: () => createTimingBarGame(),
     createPreview: () => createTimingBarPreview(),
-    infoText: "Stop the slider inside the target window. Any key counts.",
+    infoText: "Stop the slider inside the target window.",
   },
   "follow-path": {
     title: "Follow the Path",
@@ -47,7 +47,7 @@ const gameRegistry = {
   },
   "dodge-field": {
     title: "Dodge Field",
-    description: "Avoid incoming hazards as the arena tightens.",
+    description: "Avoid incoming hazards as the difficulty increases.",
     tags: ["Control", "Speed"],
     icon: "dodge",
     createGame: () => createDodgeFieldGame(),
