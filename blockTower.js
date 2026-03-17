@@ -267,7 +267,7 @@ function update() {
 
   const p       = state.player;
   const speed   = BS * 0.092;
-  const gravity = BS * 0.011;
+  const gravity = BS * 0.009;
   const SNAP    = BS * 0.13;
 
   const goLeft  = state.keys['ArrowLeft']  || state.keys['a'] || state.keys['A'];
