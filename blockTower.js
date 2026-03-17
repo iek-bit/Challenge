@@ -21,6 +21,7 @@ let animFrameId   = null;
 let boundKeyDown  = null;
 let boundKeyUp    = null;
 let onExitCb      = null;
+let onScoreCb     = null;
 
 // ── HUD elements created dynamically ─────────────────────────
 let hudEl, hudScoreEl, hudHeightEl, hudLevelEl, overlayEl;
@@ -192,6 +193,7 @@ function initState() {
     spawnTimer: 0,
     keys: {},
     highScore: state ? state.highScore : 0,
+    lastReportedScore: -1,
   };
 }
 
@@ -334,6 +336,11 @@ function update() {
   state.score = Math.floor(state.time / 6);
   if (state.score > state.highScore) state.highScore = state.score;
 
+  if (onScoreCb && state.score !== state.lastReportedScore) {
+    state.lastReportedScore = state.score;
+    onScoreCb(state.score, state.highScore);
+  }
+
   hudScoreEl.textContent  = pad(state.score, 6);
   hudHeightEl.textContent = 'HEIGHT ' + Math.max(0, Math.round((GROUND_Y - (p.y + PLAYER_H)) / BS));
   hudLevelEl.textContent  = 'LV ' + getLevel();
@@ -472,7 +479,13 @@ export function start(canvasElement, onExit) {
   canvas    = canvasElement;
   ctx       = canvas.getContext('2d');
   container = canvas.parentElement;
-  onExitCb  = onExit || null;
+  if (onExit && typeof onExit === 'object') {
+    onExitCb = onExit.onExit || null;
+    onScoreCb = onExit.onScore || null;
+  } else {
+    onExitCb  = onExit || null;
+    onScoreCb = null;
+  }
 
   state = null;
   createHUD();
@@ -535,6 +548,7 @@ export function stop() {
 
   boundKeyDown = null;
   boundKeyUp   = null;
+  onScoreCb    = null;
 }
 
 // ── Event handlers ────────────────────────────────────────────
