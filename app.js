@@ -18,6 +18,14 @@ const gameRegistry = {
     createPreview: () => createMouseCirclePreview(),
     infoText: "Keep the cursor inside a morphing shape as it darts around.",
   },
+  "block-tower": {
+    title: "Block Tower",
+    description: "Climb a collapsing tower with tight platforming control.",
+    tags: ["Skill"],
+    icon: "tower",
+    createGame: () => createBlockTowerGame(),
+    infoText: "Survive falling blocks and climb higher each round.",
+  },
   "precision-clicks": {
     title: "Precision Clicks",
     description: "Hit fast targets before they blink away.",
@@ -144,6 +152,15 @@ const iconFactory = {
       <line x1="94" y1="70" x2="102" y2="80"></line>
       <circle cx="34" cy="78" r="8"></circle>
       <circle cx="86" cy="78" r="8"></circle>
+    </svg>
+  `,
+  tower: () => `
+    <svg class="game-icon" viewBox="0 0 120 120" fill="none" stroke-width="2">
+      <rect x="36" y="20" width="48" height="80"></rect>
+      <rect x="30" y="34" width="12" height="18"></rect>
+      <rect x="78" y="34" width="12" height="18"></rect>
+      <rect x="52" y="56" width="16" height="20"></rect>
+      <line x1="30" y1="100" x2="90" y2="100"></line>
     </svg>
   `,
 };
@@ -387,6 +404,41 @@ function insertRacingIframe(button) {
 
   // Insert fullscreen overlay into the page.
   document.body.appendChild(overlay);
+}
+
+function createBlockTowerGame() {
+  let moduleRef = null;
+  let started = false;
+  let previousHudDisplay = "";
+
+  function start() {
+    const hud = document.querySelector(".game-hud");
+    if (hud) {
+      previousHudDisplay = hud.style.display;
+      hud.style.display = "none";
+    }
+    missedReadout.classList.add("is-collapsed");
+    heartsReadout.classList.add("is-hidden");
+    import("./blockTower.js").then((mod) => {
+      moduleRef = mod;
+      started = true;
+      moduleRef.start(gameCanvas, () => {
+        GameController.stop();
+      });
+    });
+  }
+
+  function stop() {
+    if (moduleRef && started) {
+      moduleRef.stop();
+    }
+    const hud = document.querySelector(".game-hud");
+    if (hud) {
+      hud.style.display = previousHudDisplay || "";
+    }
+  }
+
+  return { start, stop };
 }
 
 function parseScoreValue(scoreText) {
