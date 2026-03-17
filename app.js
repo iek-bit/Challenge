@@ -192,10 +192,13 @@ function buildGameSections() {
       const desc = document.createElement("p");
       desc.textContent = game.description;
 
-      const highscore = document.createElement("div");
-      highscore.className = "game-highscore";
-      const storedScore = getHighScore(gameId);
-      highscore.textContent = storedScore === null ? "High: --" : `High: ${formatHighScore(storedScore)}`;
+      let highscore = null;
+      if (gameId !== "racing-mode") {
+        highscore = document.createElement("div");
+        highscore.className = "game-highscore";
+        const storedScore = getHighScore(gameId);
+        highscore.textContent = storedScore === null ? "High: --" : `High: ${formatHighScore(storedScore)}`;
+      }
 
       card.innerHTML = iconFactory[game.icon]?.() ?? "";
       card.appendChild(previewCanvas);
@@ -206,7 +209,9 @@ function buildGameSections() {
       card.appendChild(chip);
       card.appendChild(title);
       card.appendChild(desc);
-      card.appendChild(highscore);
+      if (highscore) {
+        card.appendChild(highscore);
+      }
 
       grid.appendChild(card);
 
@@ -396,6 +401,7 @@ function formatHighScore(value) {
 }
 
 function updateCardHighScore(gameId) {
+  if (gameId === "racing-mode") return;
   const card = document.querySelector(`.game-card[data-game-id="${gameId}"]`);
   if (!card) return;
   const label = card.querySelector(".game-highscore");
