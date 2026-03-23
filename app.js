@@ -88,9 +88,25 @@ const heartsReadout = document.getElementById("heartsReadout");
 document.body.classList.add("home-active");
 
 const HIGHSCORE_PREFIX = "challenge_highscore_";
+const safeStorage = {
+  get(key) {
+    try {
+      return window.localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  set(key, value) {
+    try {
+      window.localStorage.setItem(key, value);
+    } catch {
+      // Ignore storage failures so the games continue to work.
+    }
+  },
+};
 
 function getHighScore(gameId) {
-  const raw = window.localStorage.getItem(`${HIGHSCORE_PREFIX}${gameId}`);
+  const raw = safeStorage.get(`${HIGHSCORE_PREFIX}${gameId}`);
   if (!raw) return null;
   const value = Number(raw);
   return Number.isFinite(value) ? value : null;
@@ -100,7 +116,7 @@ function setHighScore(gameId, scoreValue) {
   if (!Number.isFinite(scoreValue)) return;
   const existing = getHighScore(gameId);
   if (existing === null || scoreValue > existing) {
-    window.localStorage.setItem(`${HIGHSCORE_PREFIX}${gameId}`, String(scoreValue));
+    safeStorage.set(`${HIGHSCORE_PREFIX}${gameId}`, String(scoreValue));
   }
 }
 
@@ -219,10 +235,6 @@ function buildGameSections() {
 
       card.innerHTML = iconFactory[game.icon]?.() ?? "";
       card.appendChild(previewCanvas);
-      const icon = card.querySelector(".game-icon");
-      if (icon) {
-        icon.remove();
-      }
       card.appendChild(chip);
       card.appendChild(title);
       card.appendChild(desc);
@@ -237,6 +249,12 @@ function buildGameSections() {
         HoverPreviewController.start(card);
       });
       card.addEventListener("mouseleave", () => {
+        HoverPreviewController.stop(card);
+      });
+      card.addEventListener("focus", () => {
+        HoverPreviewController.start(card);
+      });
+      card.addEventListener("blur", () => {
         HoverPreviewController.stop(card);
       });
     });
@@ -270,11 +288,34 @@ function setupNavigation() {
   infoClose.addEventListener("click", () => {
     GamePreviewController.close();
   });
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (!infoModal.classList.contains("is-hidden")) {
+      GamePreviewController.close();
+      return;
+    }
+    const racingOverlay = document.getElementById("racingIframeOverlay");
+    if (racingOverlay) {
+      closeRacingIframe();
+      return;
+    }
+    if (!gameScreen.classList.contains("is-hidden")) {
+      GameController.stop();
+    }
+  });
 }
 
 const GameController = (() => {
   let currentGame = null;
   let currentGameId = null;
+
+  function resetHudState() {
+    missedReadout.classList.remove("is-collapsed");
+    missedReadout.textContent = "Missed 0/3";
+    heartsReadout.classList.add("is-hidden");
+    heartsReadout.textContent = "❤❤❤";
+  }
 
   function showView(view) {
     const views = [homeScreen, selectScreen, gameScreen];
@@ -294,13 +335,15 @@ const GameController = (() => {
       return;
     }
 
+    GamePreviewController.close();
+    closeRacingIframe();
     if (currentGame) {
       currentGame.stop();
     }
 
     showView(gameScreen);
     gameOver.classList.add("is-hidden");
-    heartsReadout.classList.add("is-hidden");
+    resetHudState();
     document.body.classList.add("game-active");
     currentGameId = gameId;
     currentGame = gameConfig.createGame();
@@ -308,6 +351,8 @@ const GameController = (() => {
   }
 
   function stop() {
+    GamePreviewController.close();
+    closeRacingIframe();
     if (currentGame) {
       currentGame.stop();
       currentGame = null;
@@ -316,6 +361,7 @@ const GameController = (() => {
     document.body.classList.remove("game-active");
     showView(selectScreen);
     gameOver.classList.add("is-hidden");
+    resetHudState();
   }
 
   function gameOverScreen(scoreText) {
@@ -332,7 +378,7 @@ const GameController = (() => {
     gameOverScore.textContent = `Score ${scoreText}`;
     gameOver.classList.remove("is-hidden");
     document.body.classList.remove("game-active");
-    heartsReadout.classList.add("is-hidden");
+    resetHudState();
   }
 
   return { start, stop, gameOverScreen };
@@ -395,7 +441,7 @@ function insertRacingIframe(button) {
   exit.style.fontSize = "12px";
 
   exit.addEventListener("click", () => {
-    overlay.remove();
+    closeRacingIframe();
   });
 
   frameWrap.appendChild(iframe);
@@ -403,7 +449,17 @@ function insertRacingIframe(button) {
   overlay.appendChild(exit);
 
   // Insert fullscreen overlay into the page.
+  document.body.classList.add("game-active");
   document.body.appendChild(overlay);
+}
+
+function closeRacingIframe() {
+  const overlay = document.getElementById("racingIframeOverlay");
+  if (!overlay) return;
+  overlay.remove();
+  if (gameScreen.classList.contains("is-hidden")) {
+    document.body.classList.remove("game-active");
+  }
 }
 
 function createBlockTowerGame() {
@@ -419,19 +475,30 @@ function createBlockTowerGame() {
     }
     missedReadout.classList.add("is-collapsed");
     heartsReadout.classList.add("is-hidden");
-    import("./blockTower.js").then((mod) => {
-      moduleRef = mod;
-      started = true;
-      moduleRef.start(gameCanvas, () => {
-        GameController.stop();
+    import("./blockTower.js")
+      .then((mod) => {
+        moduleRef = mod;
+        started = true;
+        moduleRef.start(gameCanvas, () => {
+          GameController.stop();
+        });
+      })
+      .catch((error) => {
+        console.error("Unable to load Block Tower.", error);
+        if (hud) {
+          hud.style.display = previousHudDisplay || "";
+        }
+        missedReadout.classList.remove("is-collapsed");
+        window.alert("Block Tower could not be loaded.");
       });
-    });
   }
 
   function stop() {
     if (moduleRef && started) {
       moduleRef.stop();
     }
+    moduleRef = null;
+    started = false;
     const hud = document.querySelector(".game-hud");
     if (hud) {
       hud.style.display = previousHudDisplay || "";
@@ -503,12 +570,27 @@ const GamePreviewController = (() => {
 
 const HoverPreviewController = (() => {
   const previews = new WeakMap();
+  const trackedCards = new Set();
+
+  function initializePreview(card, game) {
+    const canvas = card.querySelector(".game-preview");
+    if (!canvas) return;
+    const existing = previews.get(card);
+    if (existing) {
+      existing.stop?.();
+    }
+    resizeCanvasToCard(canvas, card);
+    const instance = game.createPreview(canvas);
+    if (instance.renderStatic) {
+      instance.renderStatic();
+    }
+    previews.set(card, instance);
+  }
 
   function init(card, gameId) {
     const game = gameRegistry[gameId];
     if (!game || !game.createPreview) return;
-    const canvas = card.querySelector(".game-preview");
-    if (!canvas) return;
+    trackedCards.add(card);
     let attempts = 0;
     const tryInit = () => {
       const rect = card.getBoundingClientRect();
@@ -519,12 +601,7 @@ const HoverPreviewController = (() => {
         }
         return;
       }
-      resizeCanvasToCard(canvas, card);
-      const instance = game.createPreview(canvas);
-      if (instance.renderStatic) {
-        instance.renderStatic();
-      }
-      previews.set(card, instance);
+      initializePreview(card, game);
     };
     requestAnimationFrame(tryInit);
   }
@@ -542,6 +619,19 @@ const HoverPreviewController = (() => {
     }
   }
 
+  function refreshAll() {
+    trackedCards.forEach((card) => {
+      if (!document.body.contains(card)) {
+        trackedCards.delete(card);
+        return;
+      }
+      const gameId = card.dataset.gameId;
+      const game = gameRegistry[gameId];
+      if (!game || !game.createPreview) return;
+      initializePreview(card, game);
+    });
+  }
+
   function resizeCanvasToCard(canvas, card) {
     const rect = card.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -553,7 +643,9 @@ const HoverPreviewController = (() => {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  return { init, start, stop };
+  window.addEventListener("resize", refreshAll);
+
+  return { init, start, stop, refreshAll };
 })();
 
 function createMouseCircleGame() {
