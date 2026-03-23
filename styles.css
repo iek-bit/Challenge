@@ -297,6 +297,12 @@ body.home-active .site-header {
   display: block;
 }
 
+.game-module-mount {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
 .game-hud {
   position: relative;
   z-index: 2;

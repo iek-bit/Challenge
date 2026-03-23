@@ -62,6 +62,14 @@ const gameRegistry = {
     createPreview: () => createDodgeFieldPreview(),
     infoText: "Dodge waves of hazards as they speed up and begin to curve.",
   },
+  "missile-command": {
+    title: "Missile Command",
+    description: "Defend your cities by intercepting incoming missile waves.",
+    tags: ["Skill", "Control"],
+    icon: "missile",
+    createGame: () => createMissileCommandGame(),
+    infoText: "Protect the cities, manage launcher ammo, and survive longer waves.",
+  },
 };
 
 const startButton = document.getElementById("startButton");
@@ -84,6 +92,7 @@ const infoTitle = document.getElementById("infoTitle");
 const infoText = document.getElementById("infoText");
 const infoCanvas = document.getElementById("infoCanvas");
 const heartsReadout = document.getElementById("heartsReadout");
+const gameModuleMount = document.getElementById("gameModuleMount");
 
 document.body.classList.add("home-active");
 
@@ -177,6 +186,19 @@ const iconFactory = {
       <rect x="78" y="34" width="12" height="18"></rect>
       <rect x="52" y="56" width="16" height="20"></rect>
       <line x1="30" y1="100" x2="90" y2="100"></line>
+    </svg>
+  `,
+  missile: () => `
+    <svg class="game-icon" viewBox="0 0 120 120" fill="none" stroke-width="2">
+      <path d="M18 92 L42 64"></path>
+      <path d="M42 64 L54 72"></path>
+      <path d="M42 64 L50 52"></path>
+      <path d="M62 28 L78 44"></path>
+      <path d="M78 44 L86 36"></path>
+      <path d="M78 44 L70 52"></path>
+      <circle cx="54" cy="72" r="12"></circle>
+      <circle cx="86" cy="36" r="8"></circle>
+      <path d="M32 100 H88"></path>
     </svg>
   `,
 };
@@ -503,6 +525,74 @@ function createBlockTowerGame() {
     if (hud) {
       hud.style.display = previousHudDisplay || "";
     }
+  }
+
+  return { start, stop };
+}
+
+function createMissileCommandGame() {
+  let moduleRef = null;
+  let started = false;
+  let previousHudDisplay = "";
+  let previousCanvasDisplay = "";
+  let bestScore = 0;
+
+  function start() {
+    const hud = document.querySelector(".game-hud");
+    if (hud) {
+      previousHudDisplay = hud.style.display;
+      hud.style.display = "none";
+    }
+    previousCanvasDisplay = gameCanvas.style.display;
+    gameCanvas.style.display = "none";
+    gameOver.classList.add("is-hidden");
+    gameModuleMount.classList.remove("is-hidden");
+    bestScore = 0;
+    import("./missileCommand.js")
+      .then((mod) => {
+        moduleRef = mod;
+        started = true;
+        moduleRef.start(gameModuleMount, {
+          onExit: () => {
+            GameController.stop();
+          },
+          onScoreChange: (scoreValue) => {
+            if (Number.isFinite(scoreValue)) {
+              bestScore = Math.max(bestScore, scoreValue);
+            }
+          },
+          onGameOver: (scoreValue) => {
+            if (!Number.isFinite(scoreValue)) return;
+            bestScore = Math.max(bestScore, scoreValue);
+            setHighScore("missile-command", bestScore);
+            updateCardHighScore("missile-command");
+          },
+        });
+      })
+      .catch((error) => {
+        console.error("Unable to load Missile Command.", error);
+        cleanupView();
+        window.alert("Missile Command could not be loaded.");
+      });
+  }
+
+  function cleanupView() {
+    gameModuleMount.classList.add("is-hidden");
+    gameModuleMount.replaceChildren();
+    gameCanvas.style.display = previousCanvasDisplay || "";
+    const hud = document.querySelector(".game-hud");
+    if (hud) {
+      hud.style.display = previousHudDisplay || "";
+    }
+  }
+
+  function stop() {
+    if (moduleRef && started) {
+      moduleRef.stop();
+    }
+    moduleRef = null;
+    started = false;
+    cleanupView();
   }
 
   return { start, stop };
