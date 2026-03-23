@@ -131,7 +131,12 @@ body.home-active .app-shell {
 .home-screen {
   display: grid;
   place-items: center;
-  min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding:
+    calc(24px + env(safe-area-inset-top))
+    0
+    calc(24px + env(safe-area-inset-bottom));
 }
 
 .home-card {
