@@ -88,6 +88,14 @@ body.home-active .app-shell {
   padding-top: 0;
 }
 
+body.home-active .site-header {
+  position: absolute;
+  top: calc(var(--shell-padding-top) + env(safe-area-inset-top));
+  left: var(--shell-padding-x);
+  right: var(--shell-padding-x);
+  z-index: 2;
+}
+
 .site-header {
   display: flex;
   align-items: center;
