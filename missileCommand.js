@@ -10,7 +10,7 @@
 // ============================================================
 
 const BG = '#0d0d0d', ACCENT = '#3ecfb2';
-const MISSILE_SPEED = 0.55, INTERCEPTOR_SPEED = 4.5;
+const MISSILE_SPEED = 0.55, INTERCEPTOR_SPEED = 5.8;
 const NUM_CITIES = 6, NUM_LAUNCHERS = 3;
 
 let canvas, ctx, W, H, state, animId = null;
@@ -579,7 +579,7 @@ function update() {
     const p = state.interceptors[i];
     p.trail.push({ x: p.x, y: p.y }); if (p.trail.length > 14) p.trail.shift();
     p.x += p.vx; p.y += p.vy; p.traveled += INTERCEPTOR_SPEED;
-    if (p.traveled >= p.totalDist) { addExplosion(p.tx, p.ty, 70, '#ffffff', 65); state.interceptors.splice(i, 1); }
+    if (p.traveled >= p.totalDist) { addExplosion(p.tx, p.ty, 70, '#ffffff', 52); state.interceptors.splice(i, 1); }
   }
 
   // Bombers
