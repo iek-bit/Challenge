@@ -1,12 +1,12 @@
 // ============================================================
-//  blockTower.js  —  Block Tower game mode
+//  games/blockTower.js  —  Block Tower game mode
 //  Usage:
-//    import { start, stop } from './blockTower.js';
+//    import { start, stop } from './games/blockTower.js';
 //    start(canvasElement, onExitCallback);   // launch the game
 //    stop();                                 // clean up & exit
 // ============================================================
 
-const BG           = '#0d0d0d';
+const BG           = '#060708';
 const BLOCK_FILL   = '#161616';
 const BLOCK_BORDER = '#2a2a2a';
 const BLOCK_SHINE  = '#ffffff';
@@ -80,7 +80,7 @@ function createHUD() {
   overlayEl.style.cssText = `
     position:absolute;top:0;left:0;width:100%;height:100%;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
-    background:rgba(13,13,13,0.93);font-family:'Courier New',monospace;
+    background:rgba(6,7,8,0.93);font-family:'Courier New',monospace;
   `;
   showStartOverlay();
   canvasWrap.appendChild(overlayEl);

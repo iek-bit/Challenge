@@ -115,10 +115,10 @@ Then open `http://localhost:8000`.
 - [app.js](/Users/isaac/Desktop/Challenge/app.js)
   Game registry, launcher UI, preview system, local high-score handling, shared game controller, and built-in minigames.
 
-- [blockTower.js](/Users/isaac/Desktop/Challenge/blockTower.js)
+- [games/blockTower.js](/Users/isaac/Desktop/Challenge/games/blockTower.js)
   Self-contained Block Tower platformer module.
 
-- [missileCommand.js](/Users/isaac/Desktop/Challenge/missileCommand.js)
+- [games/missileCommand.js](/Users/isaac/Desktop/Challenge/games/missileCommand.js)
   Self-contained Missile Command module with its own HUD, waves, pause state, and callback-based score reporting.
 
 - [main.py](/Users/isaac/Desktop/Challenge/main.py)

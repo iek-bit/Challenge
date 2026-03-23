@@ -1,7 +1,7 @@
 // ============================================================
-//  missileCommand.js  —  Missile Command game mode
+//  games/missileCommand.js  —  Missile Command game mode
 //  Usage:
-//    import { start, stop } from './missileCommand.js';
+//    import { start, stop } from './games/missileCommand.js';
 //    start(containerElement, onExitCallback);  // launch the game
 //    stop();                                   // clean up & exit
 //
@@ -9,7 +9,7 @@
 //  containerElement. stop() tears everything down cleanly.
 // ============================================================
 
-const BG = '#0d0d0d', ACCENT = '#3ecfb2';
+const BG = '#060708', ACCENT = '#3ecfb2';
 const MISSILE_SPEED = 0.55, INTERCEPTOR_SPEED = 5.8;
 const NUM_CITIES = 6, NUM_LAUNCHERS = 3;
 
@@ -129,13 +129,13 @@ function buildDOM() {
 
   // Start / game-over overlay
   overlayEl = document.createElement('div');
-  overlayEl.style.cssText = `position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(13,13,13,0.93);cursor:default;`;
+  overlayEl.style.cssText = `position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(6,7,8,0.93);cursor:default;`;
   showStartOverlay();
   canvasWrap.appendChild(overlayEl);
 
   // Pause overlay
   pauseOverlayEl = document.createElement('div');
-  pauseOverlayEl.style.cssText = `position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(13,13,13,0.82);cursor:default;`;
+  pauseOverlayEl.style.cssText = `position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(6,7,8,0.82);cursor:default;`;
   buildPauseOverlay();
   canvasWrap.appendChild(pauseOverlayEl);
 
@@ -716,7 +716,7 @@ function draw() {
     ctx.fillStyle = '#fff';
     ctx.fillRect(c.x-14, c.y, 28, 8); ctx.fillRect(c.x-10, c.y-8, 7, 8);
     ctx.fillRect(c.x+3,  c.y-8, 7, 8); ctx.fillRect(c.x-3,  c.y-14, 6, 14);
-    ctx.fillStyle = '#0d0d0d';
+    ctx.fillStyle = '#060708';
     ctx.fillRect(c.x-8, c.y-6, 3, 4); ctx.fillRect(c.x+5, c.y-6, 3, 4); ctx.fillRect(c.x-2, c.y-12, 4, 5);
   });
 
