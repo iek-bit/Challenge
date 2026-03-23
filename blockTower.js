@@ -18,9 +18,12 @@ let BS, COLS, W, H, PLAYER_W, PLAYER_H;
 let state;
 let lowestCamera;
 let animFrameId   = null;
+let lastFrameTime = 0;
 let boundKeyDown  = null;
 let boundKeyUp    = null;
 let onExitCb      = null;
+const TARGET_FPS = 60;
+const LEVEL_DURATION_SECONDS = 12;
 
 // ── HUD elements created dynamically ─────────────────────────
 let hudEl, hudScoreEl, hudHeightEl, hudLevelEl, overlayEl;
@@ -159,10 +162,10 @@ function cameraForY(playerFootY) {
 }
 
 // ── Difficulty ────────────────────────────────────────────────
-function getLevel()          { return Math.floor(state.time / 900) + 1; }
-function getSpawnInterval()  { return Math.max(55, 180 - (getLevel() - 1) * 12); }
-function getBlocksPerSpawn() { return Math.min(Math.floor(COLS * 0.4), 1 + Math.floor((getLevel() - 1) / 3)); }
-function getBlockSpeed()     { return Math.min(4.0, 1.0 + (getLevel() - 1) * 0.18); }
+function getLevel()          { return Math.floor(state.elapsed / LEVEL_DURATION_SECONDS) + 1; }
+function getSpawnInterval()  { return Math.max(0.8, 3.0 - (getLevel() - 1) * 0.24); }
+function getBlocksPerSpawn() { return Math.min(Math.max(1, Math.floor(COLS * 0.45)), 1 + Math.floor((getLevel() - 1) / 2)); }
+function getBlockSpeed()     { return Math.min(5.2, 1.15 + (getLevel() - 1) * 0.24); }
 
 // ── State ─────────────────────────────────────────────────────
 function initState() {
@@ -175,7 +178,7 @@ function initState() {
   lowestCamera = startCam;
   return {
     running: false, dead: false,
-    score: 0, time: 0,
+    score: 0, time: 0, elapsed: 0,
     camera: startCam,
     targetCamera: startCam,
     player: {
@@ -259,9 +262,11 @@ function checkVoidDeath() {
 }
 
 // ── Update ────────────────────────────────────────────────────
-function update() {
+function update(dt) {
   if (!state.running || state.dead) return;
-  state.time++;
+  const frameScale = dt * TARGET_FPS;
+  state.time += frameScale;
+  state.elapsed += dt;
 
   const p       = state.player;
   const speed   = BS * 0.092;
@@ -285,9 +290,9 @@ function update() {
   p.onGround     = false;
   p.touchingWall = false;
 
-  p.vy += gravity;
-  p.x  += p.vx;
-  p.y  += p.vy;
+  p.vy += gravity * frameScale;
+  p.x  += p.vx * frameScale;
+  p.y  += p.vy * frameScale;
   p.x = Math.max(0, Math.min(W - PLAYER_W, p.x));
 
   resolveSettled(p);
@@ -299,23 +304,28 @@ function update() {
     const newTarget = cameraForY(p.y + PLAYER_H);
     if (newTarget < state.targetCamera) state.targetCamera = newTarget;
   }
-  const newCam = state.camera + (state.targetCamera - state.camera) * 0.07;
+  const cameraBlend = Math.min(1, 0.07 * frameScale);
+  const newCam = state.camera + (state.targetCamera - state.camera) * cameraBlend;
   state.camera = Math.min(state.camera, newCam);
   lowestCamera = Math.min(lowestCamera, state.camera);
 
   // Spawn
-  state.spawnTimer++;
-  if (state.spawnTimer >= getSpawnInterval()) { spawnBlock(); state.spawnTimer = 0; }
+  state.spawnTimer += dt;
+  while (state.spawnTimer >= getSpawnInterval()) {
+    spawnBlock();
+    state.spawnTimer -= getSpawnInterval();
+  }
 
   // Settle falling blocks
   for (let i = state.fallingBlocks.length - 1; i >= 0; i--) {
     const fb = state.fallingBlocks[i];
-    fb.y += fb.vy;
+    const fallStep = fb.vy * frameScale;
+    fb.y += fallStep;
     let landed = false, landY = GROUND_Y + BS;
     for (const b of state.blocks) {
       if (!b.settled) continue;
       const xOv = fb.x + fb.w > b.x + 2 && fb.x < b.x + b.w - 2;
-      if (xOv && fb.y + fb.h >= b.y && fb.y + fb.h <= b.y + b.h + fb.vy + 2) {
+      if (xOv && fb.y + fb.h >= b.y && fb.y + fb.h <= b.y + b.h + fallStep + 2) {
         if (b.y - fb.h < landY) { landY = b.y - fb.h; landed = true; }
       }
     }
@@ -331,7 +341,7 @@ function update() {
   state.blocks = state.blocks.filter(b => b.y < state.camera + H + BS * 5);
   if (checkVoidDeath()) { die('VOID'); return; }
 
-  state.score = Math.floor(state.time / 6);
+  state.score = Math.floor(state.elapsed * 10);
   if (state.score > state.highScore) state.highScore = state.score;
 
   hudScoreEl.textContent  = pad(state.score, 6);
@@ -439,8 +449,10 @@ function draw() {
 }
 
 // ── Loop ──────────────────────────────────────────────────────
-function loop() {
-  update();
+function loop(now = performance.now()) {
+  const dt = Math.min((now - lastFrameTime) / 1000, 0.05);
+  lastFrameTime = now;
+  update(dt);
   draw();
   animFrameId = requestAnimationFrame(loop);
 }
@@ -451,7 +463,9 @@ function startGame() {
   state = initState();
   state.highScore = hs;
   state.running = true;
+  state.spawnTimer = Math.max(0, getSpawnInterval() * 0.45);
   overlayEl.style.display = 'none';
+  lastFrameTime = performance.now();
 }
 
 function die(reason) {
@@ -478,6 +492,7 @@ export function start(canvasElement, onExit) {
   createHUD();
 
   state = initState();
+  lastFrameTime = performance.now();
 
   // Keyboard
   boundKeyDown = (e) => {

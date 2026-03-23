@@ -2349,9 +2349,19 @@ function createDodgeFieldGame() {
   function createHazard() {
     const type = pickHazardType();
     const sizeTier = pickSizeTier();
-    const radius = sizeTierRadius(sizeTier);
+    let radius = sizeTierRadius(sizeTier);
     const { x, y, vx, vy } = spawnFromEdge();
-    const speedScale = randomRange(0.55, 1.2);
+    let speedScale = randomRange(0.55, 1.2);
+    if (type === "fast") {
+      speedScale *= 1.8;
+      radius *= 0.82;
+    } else if (type === "track") {
+      speedScale *= 0.92;
+    } else if (type === "curve") {
+      speedScale *= 1.05;
+    } else if (type === "wander") {
+      speedScale *= 0.95;
+    }
     return {
       type,
       x,
@@ -2477,6 +2487,14 @@ function createDodgeFieldGame() {
         hazard.curvePhase += dt * 2;
         hazard.vx += Math.cos(hazard.curvePhase) * hazard.curveStrength;
         hazard.vy += Math.sin(hazard.curvePhase) * hazard.curveStrength;
+      }
+      if (hazard.type === "fast") {
+        const baseSpeed = currentHazardSpeed() * 1.75;
+        const len = Math.hypot(hazard.vx, hazard.vy) || 1;
+        const targetVX = (hazard.vx / len) * baseSpeed;
+        const targetVY = (hazard.vy / len) * baseSpeed;
+        hazard.vx = lerp(hazard.vx, targetVX, 0.14);
+        hazard.vy = lerp(hazard.vy, targetVY, 0.14);
       }
       if (hazard.type === "wander") {
         hazard.noisePhase += dt * 3;
